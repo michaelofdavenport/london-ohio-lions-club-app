@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>London Lions – Events</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background:#f4f6f8;
+      color:#111827;
+    }
+
+    header{
+      background:#111827;
+      color:#fff;
+      padding:16px 24px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+
+    header .left{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      min-width: 240px;
+    }
+
+    header img{
+      height:44px;
+      width:auto;
+      display:block;
+    }
+
+    header .title{
+      font-size:20px;
+      font-weight:900;
+      line-height:1.1;
+    }
+
+    header .right{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+
+    .btn{
+      border:0;
+      border-radius:10px;
+      padding:10px 14px;
+      font-weight:900;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .btn-nav{ background:#e5e7eb; color:#111827; }
+    .btn-logout{ background:#ef4444; color:#fff; }
+    .btn-primary{ background:#111827; color:#fff; }
+    .btn-secondary{ background:#e5e7eb; color:#111827; }
+    .btn-edit{ background:#3b82f6; color:#fff; }
+
+    .wrap{
+      max-width: 1200px;
+      margin: 18px auto;
+      padding: 0 18px 30px;
+    }
+
+    .card{
+      background:#fff;
+      border:1px solid #e5e7eb;
+      border-radius:14px;
+      box-shadow:0 8px 20px rgba(0,0,0,0.06);
+      overflow:hidden;
+      margin-bottom: 16px;
+    }
+
+    .card .card-h{
+      padding:14px 16px;
+      font-weight:900;
+      border-bottom:1px solid #eef2f7;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+
+    .muted{ color:#6b7280; font-weight:800; font-size:13px; }
+
+    .card .card-b{
+      padding:16px;
+    }
+
+    /* CREATE FORM GRID — no overlap */
+    .form-grid{
+      display:grid;
+      grid-template-columns: 220px 220px 160px 1fr 1fr; /* Start, End, Visibility, Title, Location */
+      gap:12px;
+      align-items:end;
+    }
+
+    label{
+      display:block;
+      font-size:12px;
+      font-weight:900;
+      color:#6b7280;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+      margin-bottom:6px;
+    }
+
+    input, select, textarea{
+      width:100%;
+      box-sizing:border-box;
+      padding:10px 12px;
+      border-radius:10px;
+      border:1px solid #d1d5db;
+      background:#fff;
+      font-weight:800;
+      font-size:14px;
+    }
+
+    textarea{
+      min-height: 90px;
+      resize: vertical;
+    }
+
+    .row2{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:12px;
+      margin-top:12px;
+    }
+
+    .actions{
+      display:flex;
+      gap:10px;
+      margin-top:14px;
+      flex-wrap:wrap;
+    }
+
+    /* EVENTS LIST */
+    .event{
+      padding:14px 16px;
+      border-top:1px solid #eef2f7;
+      display:grid;
+      grid-template-columns: 240px 1fr 260px;
+      gap:12px;
+      align-items:start;
+    }
+
+    .event:first-child{ border-top:0; }
+
+    .event .when{
+      font-weight:900;
+    }
+
+    .pill{
+      display:inline-block;
+      padding:4px 10px;
+      border-radius:999px;
+      font-size:12px;
+      font-weight:900;
+      letter-spacing:.03em;
+      border:1px solid transparent;
+      white-space:nowrap;
+      margin-left:8px;
+      vertical-align:middle;
+    }
+    .pill.public{ background:#ecfdf5; color:#065f46; border-color:#a7f3d0; }
+    .pill.private{ background:#fef2f2; color:#7f1d1d; border-color:#fecaca; }
+
+    .event .main .name{
+      font-size:16px;
+      font-weight:1000;
+      margin:0 0 4px;
+    }
+
+    .event .main .loc{
+      font-weight:900;
+      color:#374151;
+      margin:0 0 8px;
+    }
+
+    .event .main .desc{
+      color:#4b5563;
+      font-weight:700;
+      margin:0;
+      white-space:pre-wrap;
+    }
+
+    .event .meta{
+      text-align:right;
+      color:#6b7280;
+      font-weight:800;
+      font-size:13px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      align-items:flex-end;
+    }
+
+    .event .meta .meta-actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+
+    .btn-sm{
+      padding:8px 10px;
+      border-radius:10px;
+      font-size:13px;
+      font-weight:900;
+      border:0;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+
+    .hint{
+      margin-top:10px;
+      font-weight:900;
+      color:#6b7280;
+    }
+
+    /* MODAL */
+    .modal-backdrop{
+      position:fixed;
+      inset:0;
+      background: rgba(0,0,0,0.45);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding:18px;
+      z-index:9999;
+    }
+    .modal{
+      width:100%;
+      max-width: 980px;              /* ✅ wider */
+      background:#fff;
+      border-radius: 16px;
+      border:1px solid #e5e7eb;
+      box-shadow: 0 30px 90px rgba(0,0,0,0.35);
+      overflow:hidden;
+    }
+    .modal .mh{
+      background:#111827;
+      color:#fff;
+      padding:12px 16px;
+      font-size:16px;
+      font-weight:900;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .modal .mb{
+      padding:16px;
+    }
+    .modal .mf{
+      padding:12px 16px 16px;
+      display:flex;
+      gap:10px;
+      justify-content:flex-end;
+      flex-wrap:wrap;
+    }
+
+    /* ✅ CLEAN EDIT GRID (no more smashed fields)
+       Desktop: Start | End | Visibility on row 1
+       Row 2: Title | Location
+       Then Description full width
+    */
+    .modal-grid{
+      display:grid;
+      grid-template-columns: 1fr 1fr 220px; /* Start, End, Visibility */
+      gap:12px;
+      align-items:end;
+      margin-bottom:12px;
+    }
+
+    .modal-grid-2{
+      display:grid;
+      grid-template-columns: 1fr 1fr;       /* Title, Location */
+      gap:12px;
+      align-items:end;
+      margin-bottom:12px;
+    }
+
+    @media (max-width: 980px){
+      .form-grid{
+        grid-template-columns: 1fr 1fr; /* stacks nicely */
+      }
+      .event{
+        grid-template-columns: 1fr;
+      }
+      .event .meta{
+        text-align:left;
+        align-items:flex-start;
+      }
+      .event .meta .meta-actions{
+        justify-content:flex-start;
+      }
+
+      /* modal stacks */
+      .modal{ max-width: 720px; }
+      .modal-grid{ grid-template-columns: 1fr 1fr; }
+      .modal-grid-2{ grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 520px){
+      .modal{ max-width: 100%; }
+      .modal-grid{ grid-template-columns: 1fr; }
+      .modal-grid-2{ grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="left">
+      <img src="/static/images/lions_emblem.png" alt="London Lions Logo" />
+      <div class="title">London Lions – Events</div>
+    </div>
+
+    <div class="right">
+      <button class="btn btn-nav" id="dashBtn" type="button">Dashboard</button>
+      <button class="btn btn-nav" id="rosterBtn" type="button">Roster</button>
+      <button class="btn btn-nav" id="hoursBtn" type="button">Service Hours</button>
+      <button class="btn btn-logout" id="logoutBtn" type="button">Logout</button>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="card-h">
+        <div>Create Event</div>
+        <div class="muted">Times display in your local time</div>
+      </div>
+
+      <div class="card-b">
+        <!-- Start | End | Visibility | Title | Location -->
+        <div class="form-grid">
+          <div>
+            <label for="startAt">Start</label>
+            <input id="startAt" type="datetime-local" />
+          </div>
+
+          <div>
+            <label for="endAt">End</label>
+            <input id="endAt" type="datetime-local" />
+          </div>
+
+          <div>
+            <label for="visibility">Visibility</label>
+            <select id="visibility">
+              <option value="public">Public</option>
+              <option value="private">Private</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="title">Title</label>
+            <input id="title" placeholder="Monthly Meeting" />
+          </div>
+
+          <div>
+            <label for="location">Location</label>
+            <input id="location" placeholder="Lions Hall" />
+          </div>
+        </div>
+
+        <div class="row2">
+          <div>
+            <label for="description">Description (optional)</label>
+            <textarea id="description" placeholder="Agenda / notes..."></textarea>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary" id="createBtn" type="button">Add Event</button>
+          <button class="btn btn-secondary" id="refreshBtn" type="button">Refresh List</button>
+        </div>
+
+        <div class="hint" id="msg"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <div>Events List</div>
+        <div class="muted" id="countHint">—</div>
+      </div>
+      <div id="eventsList"></div>
+      <div class="card-b" id="empty" style="display:none;">
+        <div style="font-weight:900;color:#6b7280;">No events found.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EDIT MODAL -->
+  <div class="modal-backdrop" id="editBackdrop">
+    <div class="modal">
+      <div class="mh">
+        <div>Edit Event</div>
+        <div class="muted" id="editIdHint"></div>
+      </div>
+
+      <div class="mb">
+        <!-- Row 1: Start | End | Visibility -->
+        <div class="modal-grid">
+          <div>
+            <label for="editStartAt">Start</label>
+            <input id="editStartAt" type="datetime-local" />
+          </div>
+
+          <div>
+            <label for="editEndAt">End</label>
+            <input id="editEndAt" type="datetime-local" />
+          </div>
+
+          <div>
+            <label for="editVisibility">Visibility</label>
+            <select id="editVisibility">
+              <option value="public">Public</option>
+              <option value="private">Private</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Row 2: Title | Location -->
+        <div class="modal-grid-2">
+          <div>
+            <label for="editTitle">Title</label>
+            <input id="editTitle" />
+          </div>
+
+          <div>
+            <label for="editLocation">Location</label>
+            <input id="editLocation" />
+          </div>
+        </div>
+
+        <div class="row2">
+          <div>
+            <label for="editDescription">Description (optional)</label>
+            <textarea id="editDescription"></textarea>
+          </div>
+        </div>
+
+        <div class="hint" id="editMsg"></div>
+      </div>
+
+      <div class="mf">
+        <button class="btn btn-secondary" id="editCancelBtn" type="button">Cancel</button>
+        <button class="btn btn-primary" id="editSaveBtn" type="button">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/js/events.js"></script>
+</body>
+</html>

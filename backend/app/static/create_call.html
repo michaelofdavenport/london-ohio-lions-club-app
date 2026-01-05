@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Create Service Call</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background:#0b1220; color:#e8eefc; }
+    header { display:flex; justify-content:space-between; align-items:center; padding: 16px 18px; border-bottom:1px solid #1f2a49; background:#0b1328; position: sticky; top:0; }
+    .btn { padding: 10px 12px; border-radius: 12px; border:1px solid #2b3a66; background:#111b33; color:#e8eefc; cursor:pointer; font-weight:700; }
+    .btnPrimary { background:#2f6fff; border-color:#2f6fff; }
+    .wrap { max-width: 760px; margin: 20px auto; padding: 0 18px 40px; }
+    .card { background:#111b33; border:1px solid #233255; border-radius:14px; padding: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+    label { display:block; margin-top: 12px; font-size: 14px; color:#b9c7ef; }
+    input, select, textarea { width:100%; padding: 12px; margin-top: 6px; border-radius:10px; border:1px solid #2b3a66; background:#0b1328; color:#e8eefc; }
+    textarea { min-height: 120px; resize: vertical; }
+    .row { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .msgErr { color:#ffb4b4; margin-top: 10px; }
+    .msgOk { color:#b4ffcf; margin-top: 10px; }
+    @media (max-width: 720px) { .row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="font-weight:800;">Create Service Call</div>
+    <div style="display:flex; gap:10px;">
+      <button class="btn" id="back">Back</button>
+      <button class="btn" id="logout">Logout</button>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="row">
+        <div>
+          <label>Service Type</label>
+          <input id="service_type" placeholder="POTHOLE / TRASH / WATER / etc." />
+        </div>
+        <div>
+          <label>Priority</label>
+          <select id="priority">
+            <option>NORMAL</option>
+            <option>LOW</option>
+            <option>HIGH</option>
+            <option>URGENT</option>
+          </select>
+        </div>
+      </div>
+
+      <label>Address</label>
+      <input id="address" placeholder="123 Main St, London" />
+
+      <label>Description</label>
+      <textarea id="description" placeholder="What happened? Any landmarks?"></textarea>
+
+      <button class="btn btnPrimary" id="submit">Submit Service Call</button>
+
+      <div id="msg"></div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+  <script>
+    requireLoginOrRedirect();
+
+    document.getElementById("back").onclick = () => window.location.href = "/static/dashboard.html";
+    document.getElementById("logout").onclick = () => { clearToken(); window.location.href = "/static/index.html"; };
+
+    const msg = document.getElementById("msg");
+    const submit = document.getElementById("submit");
+
+    submit.onclick = async () => {
+      msg.className = "";
+      msg.textContent = "";
+
+      const payload = {
+        service_type: document.getElementById("service_type").value.trim(),
+        priority: document.getElementById("priority").value,
+        address: document.getElementById("address").value.trim(),
+        description: document.getElementById("description").value.trim(),
+      };
+
+      if (!payload.service_type || !payload.address || !payload.description) {
+        msg.className = "msgErr";
+        msg.textContent = "Fill in Service Type, Address, and Description.";
+        return;
+      }
+
+      try {
+        const created = await api("/service-calls", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+
+        msg.className = "msgOk";
+        msg.textContent = `Created Service Call #${created.id}. Returning to dashboard…`;
+        setTimeout(() => window.location.href = "/static/dashboard.html", 650);
+      } catch (e) {
+        msg.className = "msgErr";
+        msg.textContent = e.message;
+      }
+    };
+  </script>
+</body>
+</html>

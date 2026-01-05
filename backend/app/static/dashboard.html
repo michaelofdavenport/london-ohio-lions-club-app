@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>London Lions – Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: #f4f6f8;
+      color: #1f2937;
+    }
+
+    header {
+      background: #111827;
+      color: #fff;
+      padding: 16px 24px;
+      font-size: 20px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    header .right {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 800;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .btn-nav {
+      background: #e5e7eb;
+      color: #111827;
+    }
+
+    .btn-logout {
+      background: #ef4444;
+      color: #fff;
+    }
+
+    .btn-dark {
+      background: #111827;
+      color: #fff;
+    }
+
+    .container {
+      padding: 24px;
+      max-width: 1100px;
+      margin: auto;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px;
+    }
+
+    /* Row 2 widgets: side-by-side and centered */
+    .grid-2 {
+      margin-top: 20px;
+      grid-template-columns: repeat(2, minmax(320px, 1fr));
+    }
+    @media (max-width: 760px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+    }
+
+    .card h3 {
+      margin: 0;
+      font-size: 14px;
+      color: #6b7280;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+
+    .card .value {
+      font-size: 36px;
+      font-weight: 900;
+      margin-top: 8px;
+    }
+
+    .bar {
+      height: 10px;
+      border-radius: 6px;
+      background: #e5e7eb;
+      margin-top: 12px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      width: 0%;
+      transition: width 0.6s ease;
+    }
+
+    .approved .bar-fill { background: #16a34a; }
+    .pending .bar-fill { background: #d97706; }
+
+    /* Upcoming Events widget */
+    .events-list {
+      margin-top: 10px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .event-item {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #f9fafb;
+    }
+
+    .event-when {
+      font-weight: 900;
+      color: #111827;
+      font-size: 13px;
+    }
+
+    .event-title {
+      font-weight: 900;
+      margin-top: 4px;
+      font-size: 14px;
+      color: #111827;
+    }
+
+    .event-loc {
+      margin-top: 2px;
+      font-weight: 800;
+      color: #6b7280;
+      font-size: 13px;
+    }
+
+    .muted {
+      color: #6b7280;
+      font-weight: 800;
+      font-size: 13px;
+      margin-top: 10px;
+    }
+
+    .mini-actions {
+      margin-top: 12px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    footer {
+      text-align: center;
+      padding: 16px;
+      color: #6b7280;
+      font-size: 13px;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div>London Lions – Requests Dashboard</div>
+
+    <div class="right">
+      <button class="btn btn-nav" id="inboxBtn" type="button">Inbox</button>
+      <button class="btn btn-nav" id="rosterBtn" type="button">Roster</button>
+      <button class="btn btn-nav" id="eventsBtn" type="button">Events</button>
+      <button class="btn btn-nav" id="hoursBtn" type="button">Service Hours</button>
+      <button class="btn btn-logout" id="logoutBtn" type="button">Logout</button>
+      <button class="btn btn-nav" id="adminToolsBtn" style="display:none;">
+  Admin Tools
+</button>
+
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Row 1 -->
+    <div class="grid">
+      <div class="card">
+        <h3>Total Requests</h3>
+        <div class="value" id="totalCount">—</div>
+      </div>
+
+      <div class="card approved">
+        <h3>Approved</h3>
+        <div class="value" id="approvedCount">—</div>
+        <div class="bar"><div class="bar-fill" id="approvedBar"></div></div>
+      </div>
+
+      <div class="card pending">
+        <h3>Pending</h3>
+        <div class="value" id="pendingCount">—</div>
+        <div class="bar"><div class="bar-fill" id="pendingBar"></div></div>
+      </div>
+    </div>
+
+    <!-- Row 2 -->
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>Upcoming Events (Next 2)</h3>
+        <div class="events-list" id="upcomingEventsList"></div>
+        <div class="muted" id="upcomingEventsHint">Loading…</div>
+
+        <div class="mini-actions">
+          <button class="btn btn-dark" id="viewEventsBtn" type="button">View All Events</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Service Hours YTD</h3>
+        <div class="value" id="hoursYtdValue">—</div>
+        <div class="muted" id="hoursYtdHint">Loading…</div>
+
+        <div class="mini-actions">
+          <button class="btn btn-dark" id="viewHoursBtn" type="button">View Service Hours</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Dashboard powered by London Lions Backend
+  </footer>
+
+  <!-- ✅ All behavior lives in ONE place -->
+  <script type="module" src="/static/js/dashboard.js"></script>
+</body>
+</html>

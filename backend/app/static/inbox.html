@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>London Lions – Inbox</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:#f4f6f8; color:#111827; }
+    header{ background:#111827; color:#fff; padding:16px 24px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .title{ font-weight:900; font-size:20px; }
+    .right{ display:flex; gap:10px; flex-wrap:wrap; }
+    .btn{ border:0; border-radius:10px; padding:10px 14px; font-weight:900; cursor:pointer; }
+    .btn-nav{ background:#e5e7eb; color:#111827; }
+    .btn-logout{ background:#ef4444; color:#fff; }
+    .btn-primary{ background:#111827; color:#fff; }
+    .btn-secondary{ background:#e5e7eb; color:#111827; }
+    .btn-danger{ background:#b91c1c; color:#fff; }
+
+    .wrap{ max-width:1200px; margin:18px auto; padding:0 18px 30px; }
+    .card{ background:#fff; border:1px solid #e5e7eb; border-radius:14px; box-shadow:0 8px 20px rgba(0,0,0,.06); overflow:hidden; }
+    .card-h{ padding:14px 16px; font-weight:900; border-bottom:1px solid #eef2f7; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .muted{ color:#6b7280; font-weight:800; font-size:13px; }
+    .card-b{ padding:16px; }
+    .toolbar{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between; }
+    .left-tools{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    input,select,textarea{ padding:10px 12px; border-radius:10px; border:1px solid #d1d5db; background:#fff; font-weight:800; font-size:14px; }
+    textarea{ width:100%; min-height:90px; resize:vertical; font-weight:700; }
+
+    table{ width:100%; border-collapse:separate; border-spacing:0; border:1px solid #e5e7eb; border-radius:14px; overflow:hidden; background:#fff; }
+    thead th{ text-align:left; font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:#6b7280; font-weight:900; padding:12px; background:#f9fafb; border-bottom:1px solid #eef2f7; white-space:nowrap; }
+    tbody td{ padding:12px; border-bottom:1px solid #eef2f7; vertical-align:top; font-weight:800; }
+    tbody tr:last-child td{ border-bottom:0; }
+
+    .pill{ display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:900; border:1px solid transparent; white-space:nowrap; }
+    .pending{ background:#fff7ed; color:#9a3412; border-color:#fed7aa; }
+    .approved{ background:#ecfdf5; color:#065f46; border-color:#a7f3d0; }
+    .denied{ background:#fef2f2; color:#7f1d1d; border-color:#fecaca; }
+    .mono{ font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace; font-size:12px; color:#374151; }
+
+    .actions{ display:flex; gap:8px; flex-wrap:wrap; }
+    .btn-small{ padding:8px 10px; border-radius:10px; font-weight:900; }
+
+    .modal-backdrop{ position:fixed; inset:0; background:rgba(17,24,39,.55); display:none; align-items:center; justify-content:center; padding:18px; z-index:999; }
+    .modal{ width:min(980px,100%); background:#fff; border-radius:16px; overflow:hidden; box-shadow:0 22px 70px rgba(0,0,0,.35); }
+    .modal-h{ background:#111827; color:#fff; padding:12px 14px; font-weight:1000; display:flex; justify-content:space-between; gap:10px; }
+    .modal-b{ padding:16px; }
+    .grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .full{ grid-column:1 / -1; }
+    label{ display:block; font-size:12px; font-weight:900; color:#6b7280; text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px; }
+    .divider{ height:1px; background:#eef2f7; margin:14px 0; }
+    .modal-actions{ display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; margin-top:12px; }
+
+    @media (max-width:900px){ .grid{ grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">London Lions – Inbox</div>
+    <div class="right">
+      <button class="btn btn-nav" id="dashBtn">Dashboard</button>
+      <button class="btn btn-nav" id="adminToolsBtn">Admin Tools</button>
+      <button class="btn btn-logout" id="logoutBtn">Logout</button>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="card-h">
+        <div>Requests Inbox</div>
+        <div class="muted" id="countHint">—</div>
+      </div>
+      <div class="card-b">
+        <div class="toolbar">
+          <div class="left-tools">
+            <input id="q" placeholder="Search name / email / description" />
+            <select id="status">
+              <option value="">All</option>
+              <option value="PENDING">PENDING</option>
+              <option value="IN_PROGRESS">IN_PROGRESS</option>
+              <option value="APPROVED">APPROVED</option>
+              <option value="DENIED">DENIED</option>
+              <option value="CLOSED">CLOSED</option>
+            </select>
+            <select id="assigned">
+              <option value="">All</option>
+              <option value="unassigned">Unassigned</option>
+              <option value="assigned">Assigned</option>
+            </select>
+            <button class="btn btn-primary" id="refreshBtn">Refresh</button>
+            <button class="btn btn-secondary" id="printBtn">Print</button>
+          </div>
+          <div class="muted" id="msg"></div>
+        </div>
+
+        <div style="margin-top:14px; overflow:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Category</th>
+                <th>Status</th>
+                <th>Requester</th>
+                <th>Assigned</th>
+                <th style="min-width:380px;">Description</th>
+                <th style="min-width:240px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal">
+      <div class="modal-h">
+        <div id="modalTitle">Request</div>
+        <div class="muted" id="modalHint">—</div>
+      </div>
+      <div class="modal-b">
+        <div class="grid">
+          <div class="full">
+            <label>Requester</label>
+            <div class="mono" id="mWho">—</div>
+          </div>
+          <div class="full">
+            <label>Address</label>
+            <div class="mono" id="mAddr">—</div>
+          </div>
+          <div class="full">
+            <label>Description</label>
+            <div class="mono" id="mDesc" style="white-space:pre-wrap;">—</div>
+          </div>
+
+          <div>
+            <label for="mAssign">Assign To</label>
+            <select id="mAssign"></select>
+          </div>
+          <div>
+            <label for="mStatus">Set Status</label>
+            <select id="mStatus">
+              <option value="PENDING">PENDING</option>
+              <option value="IN_PROGRESS">IN_PROGRESS</option>
+              <option value="CLOSED">CLOSED</option>
+              <option value="APPROVED">APPROVED</option>
+              <option value="DENIED">DENIED</option>
+            </select>
+          </div>
+
+          <div class="full">
+            <label for="mNote">Decision / Note</label>
+            <textarea id="mNote" placeholder="Optional note (used for approve/deny or internal notes)"></textarea>
+          </div>
+
+          <div class="full">
+            <label>Notes (latest first)</label>
+            <div class="mono" id="mNotes" style="white-space:pre-wrap;">—</div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="closeBtn">Close</button>
+          <button class="btn btn-secondary" id="saveNoteBtn">Add Note</button>
+          <button class="btn btn-danger" id="denyBtn">Deny</button>
+          <button class="btn btn-primary" id="approveBtn">Approve</button>
+          <button class="btn btn-primary" id="saveAssignBtn">Save Assign/Status</button>
+        </div>
+
+        <div class="muted" id="modalMsg" style="margin-top:10px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/js/inbox.js"></script>
+</body>
+</html>

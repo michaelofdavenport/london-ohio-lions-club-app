@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>London Lions – Public Request</title>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(circle at top, #0f1b34, #060b18);
+      color: #e8eefc;
+    }
+
+    .topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      padding: 14px 18px;
+      display: flex;
+      justify-content: flex-end;
+      z-index: 999;
+      pointer-events: none;
+    }
+
+    .members-btn {
+      pointer-events: auto;
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 16px;
+      background: #ff0000;
+      color: #ffff00;
+      font-weight: 900;
+      letter-spacing: .04em;
+      cursor: pointer;
+      box-shadow: 0 18px 40px rgba(0,0,0,.45);
+    }
+
+    .wrap {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 100px 18px 30px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 820px;
+      background: rgba(10, 18, 40, 0.82);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 22px;
+      box-shadow: 0 30px 90px rgba(0,0,0,.5);
+      padding: 26px;
+    }
+
+    /* ✅ LOGO */
+    .public-logo-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 22px;
+    }
+
+    .public-logo {
+      max-width: 320px; /* ~80% larger */
+      width: 100%;
+      height: auto;
+      filter: drop-shadow(0 8px 18px rgba(0,0,0,.45));
+    }
+
+    /* ✅ CLUB NAME UNDER LOGO */
+    .club-name {
+      margin-top: 10px;
+      text-align: center;
+      font-size: 22px;
+      font-weight: 900;
+      color: #ffd700; /* BRIGHT YELLOW */
+      letter-spacing: .04em;
+    }
+
+    h1 { margin: 0 0 6px; font-size: 34px; }
+    p { margin: 0 0 22px; color: #b9c7ef; font-weight: 600; }
+
+    label {
+      display:block;
+      margin: 14px 0 8px;
+      font-weight: 800;
+      color: #cfe0ff;
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: .04em;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(7,12,28,.75);
+      color: #e8eefc;
+      outline: none;
+      font-size: 15px;
+    }
+
+    textarea { min-height: 140px; resize: vertical; }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .btnrow {
+      display: flex;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 14px;
+      padding: 14px 18px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .btn-primary { background: #3a73ff; color: #fff; }
+    .btn-secondary { background: rgba(255,255,255,.12); color: #fff; }
+
+    .msg {
+      margin-top: 14px;
+      font-weight: 700;
+      color: #b9c7ef;
+    }
+
+    @media (max-width: 720px) {
+      .row { grid-template-columns: 1fr; }
+      .public-logo { max-width: 240px; }
+      .club-name { font-size: 20px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="topbar">
+    <button class="members-btn" id="membersBtn" type="button">MEMBERS</button>
+  </div>
+
+  <div class="wrap">
+    <div class="card">
+
+      <!-- ✅ LOGO + CLUB NAME -->
+      <div class="public-logo-wrap">
+        <img
+          class="public-logo"
+          src="/static/images/lions_emblem.png"
+          alt="London Ohio Lions Club"
+        />
+        <div class="club-name">London Ohio Lion’s Club</div>
+      </div>
+
+      <h1>Request Assistance</h1>
+      <p>Public Request Form</p>
+
+      <label for="category">Category</label>
+      <select id="category">
+        <option value="">Select a category</option>
+        <option value="EYE_CARE">Eye Care</option>
+        <option value="COMMUNITY_ASSISTANCE">Community Assistance</option>
+      </select>
+
+      <div class="row">
+        <div>
+          <label for="name">Your Name</label>
+          <input id="name" placeholder="Jane Doe" />
+        </div>
+        <div>
+          <label for="phone">Phone</label>
+          <input id="phone" placeholder="(555)555-5555" inputmode="tel" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="email">Email (Optional)</label>
+          <input id="email" placeholder="jane@example.com" />
+        </div>
+        <div>
+          <label for="address">Address</label>
+          <input id="address" placeholder="123 Main St, London, OH" />
+        </div>
+      </div>
+
+      <label for="desc">Describe Your Request</label>
+      <textarea id="desc" placeholder="Tell us what you need help with..."></textarea>
+
+      <div class="btnrow">
+        <button class="btn btn-primary" id="submitBtn" type="button">Submit Request</button>
+        <button class="btn btn-secondary" id="resetBtn" type="button">Reset</button>
+      </div>
+
+      <div class="msg" id="msg"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/js/public_request.js"></script>
+</body>
+</html>

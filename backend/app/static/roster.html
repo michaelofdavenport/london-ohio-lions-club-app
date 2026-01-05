@@ -1,0 +1,365 @@
+<!-- app/static/roster.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>London Lions – Member Roster</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: #f4f6f8;
+      color: #111827;
+    }
+
+    header {
+      background: #111827;
+      color: #fff;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .left, .right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 900;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .btn-ghost {
+      background: rgba(255,255,255,0.12);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.18);
+    }
+
+    .btn-primary {
+      background: #3a73ff;
+      color: #fff;
+    }
+
+    .btn-logout {
+      background: #ef4444;
+      color: #fff;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 18px auto;
+      padding: 0 18px 30px;
+    }
+
+    .brand {
+      background: #fff;
+      border-radius: 16px;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+      padding: 18px 16px;
+      display: grid;
+      gap: 10px;
+      justify-items: center;
+    }
+
+    .brand img {
+      height: 88px;
+      width: auto;
+      display: block;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 1000;
+      letter-spacing: .02em;
+    }
+
+    .controls {
+      margin-top: 14px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .controls .search {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      flex: 1;
+    }
+
+    input {
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #d1d5db;
+      background: #fff;
+      font-weight: 800;
+      min-width: 260px;
+    }
+
+    .hint {
+      color: #6b7280;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .tablewrap {
+      margin-top: 14px;
+      background: #fff;
+      border-radius: 16px;
+      border: 1px solid #e5e7eb;
+      overflow: hidden;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid #eef2f7;
+      vertical-align: top;
+      font-size: 14px;
+    }
+
+    th {
+      background: #f9fafb;
+      text-align: left;
+      font-size: 12px;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      font-weight: 1000;
+    }
+
+    .empty {
+      padding: 18px;
+      font-weight: 900;
+      color: #6b7280;
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      z-index: 9999;
+    }
+
+    .modal {
+      width: 100%;
+      max-width: 560px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 30px 90px rgba(0,0,0,0.35);
+      overflow: hidden;
+      border: 1px solid #e5e7eb;
+    }
+
+    .modal header {
+      background: #111827;
+      color: #fff;
+      padding: 12px 16px;
+      font-size: 16px;
+      font-weight: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .modal .body {
+      padding: 14px 16px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .grid2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    label {
+      font-size: 12px;
+      font-weight: 1000;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: #374151;
+      margin-bottom: 6px;
+      display: block;
+    }
+
+    .field input, .field select {
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #d1d5db;
+      font-weight: 800;
+    }
+
+    .modal .footer {
+      padding: 12px 16px 16px;
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+
+    .btn-cancel {
+      background: #e5e7eb;
+      color: #111827;
+      border: 1px solid #d1d5db;
+    }
+
+    .msg {
+      font-weight: 900;
+      color: #6b7280;
+      font-size: 13px;
+    }
+
+    @media (max-width: 720px) {
+      input { min-width: 0; width: 100%; }
+      .grid2 { grid-template-columns: 1fr; }
+      header { align-items: flex-start; }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="left">
+      <button class="btn btn-ghost" id="dashBtn" type="button">Dashboard</button>
+    </div>
+    <div class="right">
+      <button class="btn btn-primary" id="addBtn" type="button">Add Member</button>
+      <button class="btn btn-logout" id="logoutBtn" type="button">Logout</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="brand">
+      <img src="/static/images/lions_emblem.png" alt="London Lions Logo" />
+      <h1>London Lions – Member Roster</h1>
+    </div>
+
+    <div class="controls">
+      <div class="search">
+        <input id="q" placeholder="Search name / email / phone / address" />
+        <button class="btn btn-ghost" id="refreshBtn" type="button" style="background:#111827;border-color:#111827;">
+          Refresh
+        </button>
+        <div class="hint" id="hint"></div>
+      </div>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 220px;">Member Name</th>
+            <th style="width: 260px;">Member Address</th>
+            <th style="width: 220px;">Member Email</th>
+            <th style="width: 160px;">Member Phone #</th>
+            <th style="width: 160px;">Member Since Date</th>
+            <th style="width: 160px;">Member Birthday</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty" id="empty" style="display:none;">No members found.</div>
+    </div>
+  </div>
+
+  <!-- Add Member Modal -->
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal">
+      <header>
+        <div>Add Member</div>
+        <button class="btn btn-ghost" id="modalClose" type="button" style="padding:8px 10px;">Close</button>
+      </header>
+
+      <div class="body">
+        <div class="grid2">
+          <div class="field">
+            <label for="m_full_name">Member Name</label>
+            <input id="m_full_name" placeholder="Jane Doe" />
+          </div>
+          <div class="field">
+            <label for="m_email">Member Email</label>
+            <input id="m_email" type="email" placeholder="jane@example.com" />
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div class="field">
+            <label for="m_phone">Member Phone #</label>
+            <input id="m_phone" placeholder="(555) 555-5555" />
+          </div>
+          <div class="field">
+            <label for="m_address">Member Address</label>
+            <input id="m_address" placeholder="123 Main St, London, OH" />
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div class="field">
+            <label for="m_member_since">Member Since Date</label>
+            <input id="m_member_since" type="date" />
+          </div>
+          <div class="field">
+            <label for="m_birthday">Member Birthday</label>
+            <input id="m_birthday" type="date" />
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div class="field">
+            <label for="m_password">Temporary Password</label>
+            <input id="m_password" type="password" placeholder="TempPassword123!" />
+          </div>
+          <div class="field">
+            <label for="m_is_admin">Admin?</label>
+            <select id="m_is_admin">
+              <option value="false" selected>No</option>
+              <option value="true">Yes</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="msg" id="modalMsg"></div>
+      </div>
+
+      <div class="footer">
+        <button class="btn btn-cancel" id="modalCancel" type="button">Cancel</button>
+        <button class="btn btn-primary" id="modalSave" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/js/roster.js"></script>
+</body>
+</html>

@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>London Lions – Admin Tools</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background:#f4f6f8;
+      color:#111827;
+    }
+
+    header{
+      background:#111827;
+      color:#fff;
+      padding:16px 24px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+
+    header .left{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      min-width: 240px;
+    }
+
+    header img{
+      height:44px;
+      width:auto;
+      display:block;
+    }
+
+    header .title{
+      font-size:20px;
+      font-weight:900;
+      line-height:1.1;
+    }
+
+    header .right{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+
+    .btn{
+      border:0;
+      border-radius:10px;
+      padding:10px 14px;
+      font-weight:900;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .btn-nav{ background:#e5e7eb; color:#111827; }
+    .btn-logout{ background:#ef4444; color:#fff; }
+    .btn-primary{ background:#111827; color:#fff; }
+    .btn-secondary{ background:#e5e7eb; color:#111827; }
+    .btn-danger{ background:#b91c1c; color:#fff; }
+
+    .wrap{
+      max-width: 1200px;
+      margin: 18px auto;
+      padding: 0 18px 30px;
+    }
+
+    .card{
+      background:#fff;
+      border:1px solid #e5e7eb;
+      border-radius:14px;
+      box-shadow:0 8px 20px rgba(0,0,0,0.06);
+      overflow:hidden;
+      margin-bottom: 16px;
+    }
+
+    .card .card-h{
+      padding:14px 16px;
+      font-weight:900;
+      border-bottom:1px solid #eef2f7;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+
+    .muted{ color:#6b7280; font-weight:800; font-size:13px; }
+
+    .card .card-b{
+      padding:16px;
+    }
+
+    .toolbar{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+      justify-content:space-between;
+    }
+
+    .left-tools{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+
+    .right-tools{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+      justify-content:flex-end;
+    }
+
+    input, select, textarea{
+      padding:10px 12px;
+      border-radius:10px;
+      border:1px solid #d1d5db;
+      background:#fff;
+      font-weight:800;
+      font-size:14px;
+    }
+
+    textarea{
+      width:100%;
+      min-height: 96px;
+      resize: vertical;
+      font-weight:700;
+      line-height: 1.35;
+    }
+
+    table{
+      width:100%;
+      border-collapse:separate;
+      border-spacing:0;
+      overflow:hidden;
+      border:1px solid #e5e7eb;
+      border-radius:14px;
+      background:#fff;
+    }
+
+    thead th{
+      text-align:left;
+      font-size:12px;
+      letter-spacing:.04em;
+      text-transform:uppercase;
+      color:#6b7280;
+      font-weight:900;
+      padding:12px 12px;
+      background:#f9fafb;
+      border-bottom:1px solid #eef2f7;
+      white-space:nowrap;
+    }
+
+    tbody td{
+      padding:12px 12px;
+      border-bottom:1px solid #eef2f7;
+      vertical-align:top;
+      font-weight:800;
+      color:#111827;
+    }
+
+    tbody tr:last-child td{ border-bottom:0; }
+
+    .pill{
+      display:inline-block;
+      padding:4px 10px;
+      border-radius:999px;
+      font-size:12px;
+      font-weight:900;
+      border:1px solid transparent;
+      white-space:nowrap;
+    }
+    .pill.admin{ background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+    .pill.member{ background:#f3f4f6; color:#111827; border-color:#e5e7eb; }
+    .pill.active{ background:#ecfdf5; color:#065f46; border-color:#a7f3d0; }
+    .pill.inactive{ background:#fef2f2; color:#7f1d1d; border-color:#fecaca; }
+
+    .pill.pending{ background:#fff7ed; color:#9a3412; border-color:#fed7aa; }
+    .pill.approved{ background:#ecfdf5; color:#065f46; border-color:#a7f3d0; }
+    .pill.denied{ background:#fef2f2; color:#7f1d1d; border-color:#fecaca; }
+
+    .actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .btn-small{
+      padding:8px 10px;
+      border-radius:10px;
+      font-weight:900;
+    }
+
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      font-weight: 800;
+      color: #374151;
+    }
+
+    /* Modal */
+    .modal-backdrop{
+      position:fixed;
+      inset:0;
+      background:rgba(17,24,39,.55);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding:18px;
+      z-index:999;
+    }
+    .modal{
+      width:min(920px, 100%);
+      background:#fff;
+      border-radius:16px;
+      overflow:hidden;
+      box-shadow:0 22px 70px rgba(0,0,0,.35);
+    }
+    .modal-h{
+      background:#111827;
+      color:#fff;
+      padding:12px 14px;
+      font-weight:1000;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .modal-b{
+      padding:16px;
+    }
+    .grid{
+      display:grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap:12px;
+    }
+    label{
+      display:block;
+      font-size:12px;
+      font-weight:900;
+      color:#6b7280;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+      margin-bottom:6px;
+    }
+    .full{
+      grid-column: 1 / -1;
+    }
+    .modal-actions{
+      display:flex;
+      gap:10px;
+      justify-content:flex-end;
+      margin-top:14px;
+      flex-wrap:wrap;
+    }
+    .msg{
+      margin-top:10px;
+      font-weight:900;
+      color:#6b7280;
+    }
+
+    .divider{
+      height: 1px;
+      background: #eef2f7;
+      margin: 14px 0;
+    }
+
+    @media (max-width: 880px){
+      .grid{ grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="left">
+      <img src="/static/images/lions_emblem.png" alt="London Lions Logo" />
+      <div class="title">London Lions – Admin Tools</div>
+    </div>
+
+    <div class="right">
+      <button class="btn btn-nav" id="dashBtn" type="button">Dashboard</button>
+      <button class="btn btn-nav" id="rosterBtn" type="button">Roster</button>
+      <button class="btn btn-nav" id="eventsBtn" type="button">Events</button>
+      <button class="btn btn-nav" id="hoursBtn" type="button">Service Hours</button>
+      <button class="btn btn-logout" id="logoutBtn" type="button">Logout</button>
+    </div>
+  </header>
+
+  <div class="wrap">
+
+    <!-- ========================= -->
+    <!-- CARD 1: MEMBER MANAGEMENT -->
+    <!-- ========================= -->
+    <div class="card">
+      <div class="card-h">
+        <div>Member Management</div>
+        <div class="muted" id="countHint">—</div>
+      </div>
+
+      <div class="card-b">
+        <div class="toolbar">
+          <div class="left-tools">
+            <input id="q" placeholder="Search name / email / phone" />
+            <select id="filterActive">
+              <option value="all">All</option>
+              <option value="active">Active only</option>
+              <option value="inactive">Inactive only</option>
+            </select>
+            <button class="btn btn-primary" id="refreshBtn" type="button">Refresh</button>
+          </div>
+
+          <div class="right-tools">
+            <button class="btn btn-primary" id="addBtn" type="button">Add Member</button>
+          </div>
+        </div>
+
+        <div style="margin-top:14px; overflow:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Member Since</th>
+                <th>Birthday</th>
+                <th style="min-width:240px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+
+        <div class="msg" id="msg"></div>
+      </div>
+    </div>
+
+    <!-- ========================= -->
+    <!-- CARD 2: ADMIN REQUESTS    -->
+    <!-- ========================= -->
+    <div class="card">
+      <div class="card-h">
+        <div>Admin Requests</div>
+        <div class="muted" id="reqCountHint">—</div>
+      </div>
+
+      <div class="card-b">
+        <div class="toolbar">
+          <div class="left-tools">
+            <input id="reqQ" placeholder="Search name / email / description" />
+            <select id="reqStatus">
+              <option value="">All Statuses</option>
+              <option value="PENDING">PENDING</option>
+              <option value="APPROVED">APPROVED</option>
+              <option value="DENIED">DENIED</option>
+            </select>
+            <button class="btn btn-primary" id="reqRefreshBtn" type="button">Refresh</button>
+          </div>
+
+          <div class="right-tools">
+            <button class="btn btn-secondary" id="reqExportBtn" type="button">Export CSV</button>
+            <span class="muted">Approve/Deny sets reviewer + timestamp + note.</span>
+          </div>
+        </div>
+
+        <div style="margin-top:14px; overflow:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th style="min-width:72px;">ID</th>
+                <th>Category</th>
+                <th>Status</th>
+                <th>Requester</th>
+                <th>Contact</th>
+                <th style="min-width:340px;">Description</th>
+                <th style="min-width:220px;">Reviewed</th>
+                <th style="min-width:260px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="reqRows"></tbody>
+          </table>
+        </div>
+
+        <div class="msg" id="reqMsg"></div>
+      </div>
+    </div>
+
+    <!-- ========================= -->
+    <!-- CARD 3: TEST EMAIL        -->
+    <!-- ========================= -->
+    <div class="card">
+      <div class="card-h">
+        <div>Test Email</div>
+        <div class="muted">Checks your SMTP (.env) config</div>
+      </div>
+
+      <div class="card-b">
+        <div class="toolbar">
+          <div class="left-tools">
+            <input id="testEmailTo" placeholder="Send to (optional, defaults to your login email)" style="min-width:320px;" />
+            <button class="btn btn-primary" id="sendTestEmailBtn" type="button">Send Test Email</button>
+          </div>
+        </div>
+
+        <div class="msg" id="testEmailMsg"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ========================= -->
+  <!-- MEMBER MODAL (ADD/EDIT)   -->
+  <!-- ========================= -->
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal">
+      <div class="modal-h">
+        <div id="modalTitle">Add Member</div>
+        <div class="muted" id="modalIdHint"></div>
+      </div>
+      <div class="modal-b">
+        <div class="grid">
+          <div>
+            <label for="m_name">Full Name</label>
+            <input id="m_name" />
+          </div>
+          <div>
+            <label for="m_email">Email</label>
+            <input id="m_email" />
+          </div>
+          <div>
+            <label for="m_phone">Phone</label>
+            <input id="m_phone" />
+          </div>
+
+          <div class="full">
+            <label for="m_address">Address</label>
+            <input id="m_address" />
+          </div>
+
+          <div>
+            <label for="m_since">Member Since</label>
+            <input id="m_since" type="date" />
+          </div>
+          <div>
+            <label for="m_bday">Birthday</label>
+            <input id="m_bday" type="date" />
+          </div>
+          <div>
+            <label for="m_role">Role</label>
+            <select id="m_role">
+              <option value="member">Member</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+
+          <div class="full" id="passwordBlock">
+            <label for="m_password">Password (required for new member)</label>
+            <input id="m_password" type="password" placeholder="Min 8 characters" />
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="cancelBtn" type="button">Cancel</button>
+          <button class="btn btn-primary" id="saveBtn" type="button">Save</button>
+        </div>
+
+        <div class="msg" id="modalMsg"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================= -->
+  <!-- REQUEST DECISION MODAL    -->
+  <!-- ========================= -->
+  <div class="modal-backdrop" id="reqModalBackdrop">
+    <div class="modal">
+      <div class="modal-h">
+        <div id="reqModalTitle">Review Request</div>
+        <div class="muted" id="reqModalIdHint"></div>
+      </div>
+
+      <div class="modal-b">
+        <div class="grid">
+          <div class="full">
+            <label>Requester</label>
+            <div class="mono" id="reqModalRequester">—</div>
+          </div>
+
+          <div class="full">
+            <label>Address</label>
+            <div class="mono" id="reqModalAddress">—</div>
+          </div>
+
+          <div class="full">
+            <label>Description</label>
+            <div class="mono" id="reqModalDesc" style="white-space:pre-wrap;">—</div>
+          </div>
+
+          <div class="full">
+            <label for="reqDecisionNote">Decision Note (optional)</label>
+            <textarea id="reqDecisionNote" placeholder="Why was this approved/denied? (optional)"></textarea>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="reqCancelBtn" type="button">Cancel</button>
+          <button class="btn btn-danger" id="reqDenyBtn" type="button">Deny</button>
+          <button class="btn btn-primary" id="reqApproveBtn" type="button">Approve</button>
+        </div>
+
+        <div class="msg" id="reqModalMsg"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/js/admin_tools.js"></script>
+</body>
+</html>
