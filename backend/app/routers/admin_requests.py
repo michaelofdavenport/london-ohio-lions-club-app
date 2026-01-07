@@ -21,7 +21,7 @@ router = APIRouter(prefix="/admin/requests", tags=["admin-requests"])
 
 
 # ----------------------------
-# Schemas
+# Schemas (response + inputs)
 # ----------------------------
 class RequestOut(BaseModel):
     id: int
@@ -38,6 +38,7 @@ class RequestOut(BaseModel):
 
     assigned_to_member_id: Optional[int] = None
     assigned_at: Optional[datetime] = None
+    assigned_to_name: Optional[str] = None  # used by inbox.js
 
     reviewed_by_member_id: Optional[int] = None
     reviewed_by_name: Optional[str] = None
@@ -54,10 +55,15 @@ class DecisionIn(BaseModel):
 
 
 class StatusIn(BaseModel):
-    # Matches your UI list; add/remove values as needed.
     status: str = Field(pattern="^(PENDING|IN_PROGRESS|CLOSED|APPROVED|DENIED)$")
+
+
+class AssignIn(BaseModel):
     assigned_to_member_id: Optional[int] = None
-    decision_note: Optional[str] = None
+
+
+class NoteIn(BaseModel):
+    note: str
 
 
 # ----------------------------
@@ -73,34 +79,93 @@ def get_request_or_404(db: Session, request_id: int) -> models.Request:
 def _reviewer_name(req: models.Request) -> Optional[str]:
     try:
         if getattr(req, "reviewed_by", None) is not None:
-            return getattr(req.reviewed_by, "full_name", None) or getattr(req.reviewed_by, "email", None)
+            return req.reviewed_by.full_name or req.reviewed_by.email
     except Exception:
         pass
     return None
 
 
-def _maybe_notify_requester(req: models.Request) -> None:
-    """Email requester if they provided an email. Never raises."""
-    if not req.requester_email:
+def _assignee_name(db: Session, assigned_to_member_id: Optional[int]) -> Optional[str]:
+    if not assigned_to_member_id:
+        return None
+    m = db.get(models.Member, assigned_to_member_id)
+    if not m:
+        return None
+    return m.full_name or m.email
+
+
+def _notes_for_email(db: Session, request_id: int) -> List[models.RequestNote]:
+    return (
+        db.query(models.RequestNote)
+        .filter(models.RequestNote.request_id == request_id)
+        .order_by(models.RequestNote.created_at.desc())
+        .all()
+    )
+
+
+def _format_notes_block(notes: List[models.RequestNote]) -> str:
+    if not notes:
+        return "— (no notes yet)"
+    lines: List[str] = []
+    for n in notes:
+        when = n.created_at.strftime("%Y-%m-%d %H:%M") if n.created_at else ""
+        who = ""
+        try:
+            if n.author:
+                who = (n.author.full_name or n.author.email or "").strip()
+        except Exception:
+            who = ""
+        header = f"{when} — {who}".strip(" —")
+        lines.append(f"- {header}\n  {n.note}")
+    return "\n".join(lines)
+
+
+def _send_assignment_email(
+    db: Session,
+    req: models.Request,
+    assignee: models.Member,
+) -> None:
+    """
+    Sends an email to the assignee with request details + all notes.
+    Never raises (safe).
+    """
+    to_email = (assignee.email or "").strip()
+    if not to_email:
         return
 
-    subject = f"London Lions – Your request #{req.id} is now {req.status}"
+    notes = _notes_for_email(db, req.id)
+    notes_block = _format_notes_block(notes)
+
+    subject = f"London Lions – New Assignment: Request #{req.id} ({req.category})"
+
     body = (
-        f"Hello {req.requester_name},\n\n"
-        f"Your request #{req.id} ({req.category}) is now marked as: {req.status}\n\n"
-        f"Note: {req.decision_note or '—'}\n\n"
-        f"Thank you,\nLondon Lions"
+        f"Hello {assignee.full_name or assignee.email},\n\n"
+        f"You have been assigned a new request.\n\n"
+        f"Request ID: {req.id}\n"
+        f"Category: {req.category}\n"
+        f"Status: {req.status}\n"
+        f"Submitted: {req.created_at}\n\n"
+        f"Requester Name: {req.requester_name}\n"
+        f"Requester Email: {req.requester_email or '—'}\n"
+        f"Requester Phone: {req.requester_phone or '—'}\n"
+        f"Requester Address: {req.requester_address or '—'}\n\n"
+        f"Description:\n{req.description}\n\n"
+        f"Notes (latest first):\n{notes_block}\n\n"
+        f"Thank you,\nLondon Lions\n"
     )
-    send_email_if_configured(req.requester_email, subject, body)
+
+    send_email_if_configured(to_email, subject, body)
 
 
 # ----------------------------
 # Endpoints
 # ----------------------------
+
 @router.get("", response_model=List[RequestOut])
 def list_requests(
     status: Optional[str] = Query(None),
     q: Optional[str] = Query(None),
+    assigned: Optional[str] = Query(None),  # "assigned" | "unassigned"
     limit: int = Query(300, ge=1, le=1000),
     db: Session = Depends(get_db),
     me: models.Member = Depends(auth.require_admin),
@@ -109,6 +174,11 @@ def list_requests(
 
     if status:
         qry = qry.where(models.Request.status == status)
+
+    if assigned == "assigned":
+        qry = qry.where(models.Request.assigned_to_member_id.is_not(None))
+    elif assigned == "unassigned":
+        qry = qry.where(models.Request.assigned_to_member_id.is_(None))
 
     if q:
         like = f"%{q.strip()}%"
@@ -133,8 +203,9 @@ def list_requests(
                 requester_address=r.requester_address,
                 description=r.description,
                 created_at=r.created_at,
-                assigned_to_member_id=getattr(r, "assigned_to_member_id", None),
-                assigned_at=getattr(r, "assigned_at", None),
+                assigned_to_member_id=r.assigned_to_member_id,
+                assigned_at=r.assigned_at,
+                assigned_to_name=_assignee_name(db, r.assigned_to_member_id),
                 reviewed_by_member_id=r.reviewed_by_member_id,
                 reviewed_by_name=_reviewer_name(r),
                 reviewed_at=r.reviewed_at,
@@ -142,6 +213,116 @@ def list_requests(
             )
         )
     return out
+
+
+@router.get("/{request_id}/notes")
+def list_notes(
+    request_id: int,
+    db: Session = Depends(get_db),
+    me: models.Member = Depends(auth.require_admin),
+):
+    _ = get_request_or_404(db, request_id)
+
+    notes = (
+        db.query(models.RequestNote)
+        .filter(models.RequestNote.request_id == request_id)
+        .order_by(models.RequestNote.created_at.desc())
+        .all()
+    )
+
+    return [
+        {
+            "id": n.id,
+            "request_id": n.request_id,
+            "author_id": n.author_id,
+            "author_name": (n.author.full_name or n.author.email) if n.author else None,
+            "created_at": n.created_at.strftime("%Y-%m-%d %H:%M") if n.created_at else "",
+            "note": n.note,
+        }
+        for n in notes
+    ]
+
+
+@router.post("/{request_id}/note")
+def add_note(
+    request_id: int,
+    body: NoteIn,
+    db: Session = Depends(get_db),
+    me: models.Member = Depends(auth.require_admin),
+):
+    _ = get_request_or_404(db, request_id)
+
+    note = (body.note or "").strip()
+    if not note:
+        raise HTTPException(status_code=400, detail="Note is required")
+
+    n = models.RequestNote(
+        request_id=request_id,
+        author_id=me.id,
+        note=note,
+        created_at=datetime.utcnow(),
+    )
+    db.add(n)
+
+    req = db.get(models.Request, request_id)
+    if req:
+        req.updated_at = datetime.utcnow()
+
+    db.commit()
+    return {"ok": True}
+
+
+@router.patch("/{request_id}/assign")
+def assign_request(
+    request_id: int,
+    body: AssignIn,
+    db: Session = Depends(get_db),
+    me: models.Member = Depends(auth.require_admin),
+):
+    req = get_request_or_404(db, request_id)
+
+    previous_assignee = req.assigned_to_member_id
+    new_assignee_id = body.assigned_to_member_id
+
+    assignee: Optional[models.Member] = None
+    if new_assignee_id is not None:
+        assignee = db.get(models.Member, new_assignee_id)
+        if not assignee:
+            raise HTTPException(status_code=400, detail="Assigned member not found")
+        if not assignee.is_active:
+            raise HTTPException(status_code=400, detail="Assigned member is inactive")
+
+    req.assigned_to_member_id = new_assignee_id
+    req.assigned_at = datetime.utcnow() if new_assignee_id else None
+    req.updated_at = datetime.utcnow()
+
+    db.commit()
+
+    # ✅ Send email ONLY when assignment changes to a real person
+    if new_assignee_id and new_assignee_id != previous_assignee and assignee:
+        try:
+            _send_assignment_email(db, req, assignee)
+        except Exception:
+            pass
+
+    return {"ok": True}
+
+
+@router.patch("/{request_id}/status")
+def update_status(
+    request_id: int,
+    body: StatusIn,
+    db: Session = Depends(get_db),
+    me: models.Member = Depends(auth.require_admin),
+):
+    req = get_request_or_404(db, request_id)
+
+    req.status = body.status
+    req.updated_at = datetime.utcnow()
+    req.closed_at = datetime.utcnow() if body.status == "CLOSED" else None
+
+    db.commit()
+    return {"ok": True}
 
 
 @router.patch("/{request_id}/decision")
@@ -157,56 +338,27 @@ def decide_request(
     req.reviewed_by_member_id = me.id
     req.reviewed_at = datetime.utcnow()
     req.decision_note = body.decision_note
-    if hasattr(req, "updated_at"):
-        req.updated_at = datetime.utcnow()
+    req.updated_at = datetime.utcnow()
 
     db.commit()
 
-    # Optional: notify requester
-    try:
-        _maybe_notify_requester(req)
-    except Exception:
-        pass
+    # Optional notify requester
+    if req.requester_email:
+        try:
+            subject = f"London Lions – Your request #{req.id} is now {req.status}"
+            msg = (
+                f"Hello {req.requester_name},\n\n"
+                f"Your request #{req.id} ({req.category}) is now marked as: {req.status}\n\n"
+                f"Note: {req.decision_note or '—'}\n\n"
+                f"Thank you,\nLondon Lions"
+            )
+            send_email_if_configured(req.requester_email, subject, msg)
+        except Exception:
+            pass
 
     return {"ok": True}
 
 
-# ✅ THIS is what your Inbox "Save Assign/Status" expects:
-@router.patch("/{request_id}/status")
-def update_status_and_assignment(
-    request_id: int,
-    body: StatusIn,
-    db: Session = Depends(get_db),
-    me: models.Member = Depends(auth.require_admin),
-):
-    req = get_request_or_404(db, request_id)
-
-    # Status change
-    req.status = body.status
-
-    # Assignment change (optional)
-    if hasattr(req, "assigned_to_member_id"):
-        req.assigned_to_member_id = body.assigned_to_member_id
-        if hasattr(req, "assigned_at"):
-            req.assigned_at = datetime.utcnow() if body.assigned_to_member_id else None
-
-    # Optional note
-    if body.decision_note is not None:
-        req.decision_note = body.decision_note
-
-    # Auto-set closed_at if status CLOSED
-    if hasattr(req, "closed_at"):
-        req.closed_at = datetime.utcnow() if body.status == "CLOSED" else None
-
-    if hasattr(req, "updated_at"):
-        req.updated_at = datetime.utcnow()
-
-    db.commit()
-
-    return {"ok": True}
-
-
-# ✅ CSV Export (Admin-only)
 @router.get("/export.csv")
 def export_requests_csv(
     status: Optional[str] = Query(None),
@@ -263,8 +415,8 @@ def export_requests_csv(
                 r.requester_address or "",
                 (r.description or "").replace("\n", " ").strip(),
                 r.created_at.isoformat() if r.created_at else "",
-                getattr(r, "assigned_to_member_id", "") or "",
-                getattr(r, "assigned_at", None).isoformat() if getattr(r, "assigned_at", None) else "",
+                r.assigned_to_member_id or "",
+                r.assigned_at.isoformat() if r.assigned_at else "",
                 r.reviewed_by_member_id or "",
                 r.reviewed_at.isoformat() if r.reviewed_at else "",
                 (r.decision_note or "").replace("\n", " ").strip(),

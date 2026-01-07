@@ -3,15 +3,14 @@ import { requireAdminOrRedirect } from "./admin_guard.js";
 
 await requireAdminOrRedirect();
 
+// -----------------------
+// Helpers (safe DOM)
+// -----------------------
 const $ = (id) => document.getElementById(id);
-
-$("dashBtn").addEventListener("click", () => (window.location.href = "/static/dashboard.html"));
-$("adminToolsBtn").addEventListener("click", () => (window.location.href = "/admin/tools"));
-$("logoutBtn").addEventListener("click", () => {
-  clearToken();
-  window.location.href = "/static/public_request.html";
-});
-$("printBtn").addEventListener("click", () => window.print());
+const on = (id, evt, fn) => {
+  const el = $(id);
+  if (el) el.addEventListener(evt, fn);
+};
 
 let all = [];
 let roster = [];
@@ -39,19 +38,64 @@ function shortDesc(d) {
   return s.length > 180 ? escapeHtml(s.slice(0, 180)) + "…" : escapeHtml(s || "—");
 }
 
+// -----------------------
+// Nav / header buttons
+// -----------------------
+on("dashBtn", "click", () => (window.location.href = "/static/dashboard.html"));
+on("adminToolsBtn", "click", () => (window.location.href = "/admin/tools"));
+on("logoutBtn", "click", () => {
+  clearToken();
+  window.location.href = "/static/public_request.html";
+});
+on("printBtn", "click", () => window.print());
+
+// -----------------------
+// Modal open/close
+// -----------------------
+function openModal() {
+  const mb = $("modalBackdrop");
+  if (mb) mb.style.display = "flex";
+}
+function closeModal() {
+  const mb = $("modalBackdrop");
+  if (mb) mb.style.display = "none";
+  activeId = null;
+}
+
+on("closeBtn", "click", closeModal);
+
+on("modalBackdrop", "click", (e) => {
+  const mb = $("modalBackdrop");
+  if (mb && e.target === mb) closeModal();
+});
+
+// -----------------------
+// Data loads
+// -----------------------
 async function loadRoster() {
-  // Use /admin/members so we can assign to anyone active
-  const resp = await apiFetch("/admin/members");
-  roster = resp.ok ? await resp.json() : [];
+  try {
+    const resp = await apiFetch("/admin/members");
+    roster = resp.ok ? await resp.json() : [];
+  } catch {
+    roster = [];
+  }
 }
 
 function render(rows) {
   const tbody = $("rows");
+  if (!tbody) return;
+
   tbody.innerHTML = "";
-  $("countHint").textContent = `${rows.length} request${rows.length === 1 ? "" : "s"}`;
+
+  if ($("countHint")) {
+    $("countHint").textContent = `${rows.length} request${rows.length === 1 ? "" : "s"}`;
+  }
 
   for (const r of rows) {
-    const assigned = r.assigned_to_name ? escapeHtml(r.assigned_to_name) : `<span class="muted">Unassigned</span>`;
+    const assigned = r.assigned_to_name
+      ? escapeHtml(r.assigned_to_name)
+      : `<span class="muted">Unassigned</span>`;
+
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td class="mono">#${r.id}</td>
@@ -69,13 +113,19 @@ function render(rows) {
     tbody.appendChild(tr);
   }
 
-  tbody.querySelectorAll("button[data-act='open']").forEach((b) => b.addEventListener("click", onOpen));
+  tbody.querySelectorAll("button[data-act='open']").forEach((b) =>
+    b.addEventListener("click", onOpen)
+  );
 }
 
 function applyFilters() {
-  const q = $("q").value.trim().toLowerCase();
-  const status = $("status").value;
-  const assigned = $("assigned").value;
+  const qEl = $("q");
+  const statusEl = $("status");
+  const assignedEl = $("assigned");
+
+  const q = (qEl?.value || "").trim().toLowerCase();
+  const status = statusEl?.value || "";
+  const assigned = assignedEl?.value || "";
 
   let rows = all.slice();
 
@@ -94,45 +144,46 @@ function applyFilters() {
 }
 
 async function loadRequests() {
-  $("msg").textContent = "Loading…";
+  const msgEl = $("msg");
+  if (msgEl) msgEl.textContent = "Loading…";
+
   try {
     const params = new URLSearchParams();
-    const status = $("status").value;
-    const q = $("q").value.trim();
-    const assigned = $("assigned").value;
+
+    const status = $("status")?.value || "";
+    const q = ($("q")?.value || "").trim();
+    const assigned = $("assigned")?.value || "";
 
     if (status) params.set("status", status);
     if (q) params.set("q", q);
     if (assigned) params.set("assigned", assigned);
+
     params.set("limit", "300");
 
     const resp = await apiFetch(`/admin/requests?${params.toString()}`);
     if (!resp.ok) throw new Error("Failed to load");
 
     all = await resp.json();
-    $("msg").textContent = "";
+
+    if (msgEl) msgEl.textContent = "";
     applyFilters();
   } catch (e) {
     console.error(e);
     all = [];
     render([]);
-    $("msg").textContent = "Failed to load requests.";
+    if (msgEl) msgEl.textContent = "Failed to load requests.";
   }
 }
 
-$("refreshBtn").addEventListener("click", loadRequests);
-$("q").addEventListener("input", applyFilters);
-$("status").addEventListener("change", loadRequests);
-$("assigned").addEventListener("change", loadRequests);
+// Toolbar hooks (safe)
+on("refreshBtn", "click", loadRequests);
+on("q", "input", applyFilters);
+on("status", "change", loadRequests);
+on("assigned", "change", loadRequests);
 
-function openModal() { $("modalBackdrop").style.display = "flex"; }
-function closeModal() { $("modalBackdrop").style.display = "none"; activeId = null; }
-
-$("closeBtn").addEventListener("click", closeModal);
-$("modalBackdrop").addEventListener("click", (e) => {
-  if (e.target === $("modalBackdrop")) closeModal();
-});
-
+// -----------------------
+// NOTES (requires backend endpoints)
+// -----------------------
 async function loadNotes(requestId) {
   try {
     const resp = await apiFetch(`/admin/requests/${requestId}/notes`);
@@ -143,135 +194,200 @@ async function loadNotes(requestId) {
   }
 }
 
+function renderNotes(notes) {
+  const el = $("mNotes");
+  if (!el) return;
+
+  const sorted = (notes || []).slice().sort((a, b) => {
+    const da = Date.parse(a?.created_at || "") || 0;
+    const db = Date.parse(b?.created_at || "") || 0;
+    return db - da;
+  });
+
+  el.textContent = sorted.length
+    ? sorted
+        .map((n) => `• ${n.created_at} — ${n.author_name || ("#" + n.author_id)}\n  ${n.note}`)
+        .join("\n\n")
+    : "—";
+
+  try { el.scrollTop = 0; } catch {}
+}
+
+// -----------------------
+// OPEN MODAL
+// -----------------------
 async function onOpen(e) {
   const id = Number(e.currentTarget.dataset.id);
   const r = all.find((x) => x.id === id);
   if (!r) return;
 
   activeId = id;
-  $("modalTitle").textContent = "Request";
-  $("modalHint").textContent = `#${r.id} • ${r.category} • ${r.status}`;
 
-  $("mWho").textContent =
-    `${r.requester_name || "—"}`
-    + (r.requester_email ? ` • ${r.requester_email}` : "")
-    + (r.requester_phone ? ` • ${r.requester_phone}` : "");
+  if ($("modalTitle")) $("modalTitle").textContent = "Request";
+  if ($("modalHint")) $("modalHint").textContent = `#${r.id} • ${r.category} • ${r.status}`;
 
-  $("mAddr").textContent = r.requester_address || "—";
-  $("mDesc").textContent = r.description || "—";
-  $("mNote").value = "";
-  $("modalMsg").textContent = "";
+  if ($("mWho")) {
+    $("mWho").textContent =
+      `${r.requester_name || "—"}`
+      + (r.requester_email ? ` • ${r.requester_email}` : "")
+      + (r.requester_phone ? ` • ${r.requester_phone}` : "");
+  }
+
+  if ($("mAddr")) $("mAddr").textContent = r.requester_address || "—";
+  if ($("mDesc")) $("mDesc").textContent = r.description || "—";
+  if ($("mNote")) $("mNote").value = "";
+  if ($("modalMsg")) $("modalMsg").textContent = "";
 
   // Assign dropdown
   const sel = $("mAssign");
-  sel.innerHTML = "";
-  const opt0 = document.createElement("option");
-  opt0.value = "";
-  opt0.textContent = "Unassigned";
-  sel.appendChild(opt0);
+  if (sel) {
+    sel.innerHTML = "";
 
-  roster
-    .filter((m) => m.is_active)
-    .forEach((m) => {
-      const opt = document.createElement("option");
-      opt.value = String(m.id);
-      opt.textContent = `${m.full_name || m.email} (${m.email})`;
-      sel.appendChild(opt);
-    });
+    const opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = "Unassigned";
+    sel.appendChild(opt0);
 
-  sel.value = r.assigned_to_member_id ? String(r.assigned_to_member_id) : "";
+    roster
+      .filter((m) => m.is_active)
+      .forEach((m) => {
+        const opt = document.createElement("option");
+        opt.value = String(m.id);
+        opt.textContent = `${m.full_name || m.email} (${m.email})`;
+        sel.appendChild(opt);
+      });
 
-  $("mStatus").value = String(r.status || "PENDING").toUpperCase();
+    sel.value = r.assigned_to_member_id ? String(r.assigned_to_member_id) : "";
+  }
 
-  // Notes
+  if ($("mStatus")) $("mStatus").value = String(r.status || "PENDING").toUpperCase();
+
   const notes = await loadNotes(id);
-  $("mNotes").textContent = notes.length
-    ? notes.map((n) => `• ${n.created_at} — ${n.author_name || ("#" + n.author_id)}\n  ${n.note}`).join("\n\n")
-    : "—";
+  renderNotes(notes);
 
   openModal();
 }
 
+// -----------------------
+// SAVE ASSIGN + STATUS
+// Uses ONLY /admin/requests/{id}/status
+// -----------------------
 async function saveAssignAndStatus() {
   if (!activeId) return;
-  $("modalMsg").textContent = "Saving…";
+  if ($("modalMsg")) $("modalMsg").textContent = "Saving…";
 
   try {
-    const assignedVal = $("mAssign").value;
-    const statusVal = $("mStatus").value;
+    const assignedVal = $("mAssign")?.value || "";
+    const statusVal = $("mStatus")?.value || "PENDING";
 
-    // Assign
-    await apiFetch(`/admin/requests/${activeId}/assign`, {
+    const resp = await apiFetch(`/admin/requests/${activeId}/status`, {
       method: "PATCH",
-      body: JSON.stringify({ assigned_to_member_id: assignedVal ? Number(assignedVal) : null }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: statusVal,
+        assigned_to_member_id: assignedVal ? Number(assignedVal) : null,
+      }),
     });
 
-    // Status
-    await apiFetch(`/admin/requests/${activeId}/status`, {
-      method: "PATCH",
-      body: JSON.stringify({ status: statusVal }),
-    });
+    if (!resp.ok) {
+      let detail = "Save failed.";
+      try {
+        const data = await resp.json();
+        if (data?.detail) detail = String(data.detail);
+      } catch {}
+      throw new Error(detail);
+    }
 
-    $("modalMsg").textContent = "Saved.";
+    if ($("modalMsg")) $("modalMsg").textContent = "Saved.";
     await loadRequests();
+
+    const notes = await loadNotes(activeId);
+    renderNotes(notes);
   } catch (e) {
     console.error(e);
-    $("modalMsg").textContent = "Save failed.";
+    if ($("modalMsg")) $("modalMsg").textContent = String(e?.message || "Save failed.");
   }
 }
 
-$("saveAssignBtn").addEventListener("click", saveAssignAndStatus);
+on("saveAssignBtn", "click", saveAssignAndStatus);
 
+// -----------------------
+// ADD NOTE (requires /note)
+// -----------------------
 async function addNote() {
   if (!activeId) return;
-  const note = $("mNote").value.trim();
-  if (!note) return;
 
-  $("modalMsg").textContent = "Saving note…";
+  const note = ($("mNote")?.value || "").trim();
+  if (!note) {
+    if ($("modalMsg")) $("modalMsg").textContent = "Type a note first.";
+    return;
+  }
+
+  if ($("modalMsg")) $("modalMsg").textContent = "Saving note…";
+
   try {
     const resp = await apiFetch(`/admin/requests/${activeId}/note`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ note }),
     });
-    if (!resp.ok) throw new Error("note failed");
-    $("mNote").value = "";
-    $("modalMsg").textContent = "Note added.";
+
+    if (!resp.ok) {
+      let detail = "Note failed.";
+      try {
+        const data = await resp.json();
+        if (data?.detail) detail = String(data.detail);
+      } catch {}
+      throw new Error(detail);
+    }
+
+    if ($("mNote")) $("mNote").value = "";
+    if ($("modalMsg")) $("modalMsg").textContent = "Note added.";
+
     const notes = await loadNotes(activeId);
-    $("mNotes").textContent = notes.length
-      ? notes.map((n) => `• ${n.created_at} — ${n.author_name || ("#" + n.author_id)}\n  ${n.note}`).join("\n\n")
-      : "—";
+    renderNotes(notes);
+
     await loadRequests();
   } catch (e) {
     console.error(e);
-    $("modalMsg").textContent = "Note failed.";
+    if ($("modalMsg")) $("modalMsg").textContent = String(e?.message || "Note failed.");
   }
 }
 
-$("saveNoteBtn").addEventListener("click", addNote);
+on("saveNoteBtn", "click", addNote);
 
+// -----------------------
+// APPROVE / DENY (uses /decision)
+// -----------------------
 async function decide(status) {
   if (!activeId) return;
-  const decision_note = $("mNote").value.trim() || null;
 
-  $("modalMsg").textContent = "Saving decision…";
+  const decision_note = ($("mNote")?.value || "").trim() || null;
+  if ($("modalMsg")) $("modalMsg").textContent = "Saving decision…";
+
   try {
     const resp = await apiFetch(`/admin/requests/${activeId}/decision`, {
       method: "PATCH",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status, decision_note }),
     });
-    if (!resp.ok) throw new Error("decision failed");
-    $("modalMsg").textContent = "Decision saved.";
+
+    if (!resp.ok) throw new Error("Decision failed.");
+
+    if ($("modalMsg")) $("modalMsg").textContent = "Decision saved.";
     await loadRequests();
     closeModal();
   } catch (e) {
     console.error(e);
-    $("modalMsg").textContent = "Decision failed.";
+    if ($("modalMsg")) $("modalMsg").textContent = "Decision failed.";
   }
 }
 
-$("approveBtn").addEventListener("click", () => decide("APPROVED"));
-$("denyBtn").addEventListener("click", () => decide("DENIED"));
+on("approveBtn", "click", () => decide("APPROVED"));
+on("denyBtn", "click", () => decide("DENIED"));
 
+// -----------------------
 // initial
+// -----------------------
 await loadRoster();
 await loadRequests();

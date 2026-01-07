@@ -181,9 +181,17 @@ app.include_router(admin_email.router)
 app.include_router(admin_events.router)
 
 
-# ✅ Admin-only HTML endpoint
+# ✅ Admin Tools HTML endpoint (HTML must NOT require Authorization headers)
 @app.get("/admin/tools")
-def admin_tools_page(admin: models.Member = Depends(auth.require_admin)):
+def admin_tools_page():
+    """
+    Browsers do NOT send Authorization headers when navigating to an HTML page.
+    So we serve the Admin Tools HTML without Depends(require_admin).
+
+    Real security is still enforced by:
+      - /admin/* API endpoints that DO require admin
+      - admin_tools.html JS calling requireAdminOrRedirect()
+    """
     html_path = Path("app/static/admin_tools.html")
     return FileResponse(str(html_path))
 
