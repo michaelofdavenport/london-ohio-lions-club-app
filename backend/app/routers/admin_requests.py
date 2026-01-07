@@ -54,8 +54,10 @@ class DecisionIn(BaseModel):
     decision_note: Optional[str] = None
 
 
+# ✅ UPDATED: status endpoint can also accept assignment
 class StatusIn(BaseModel):
     status: str = Field(pattern="^(PENDING|IN_PROGRESS|CLOSED|APPROVED|DENIED)$")
+    assigned_to_member_id: Optional[int] = None
 
 
 class AssignIn(BaseModel):
@@ -317,12 +319,44 @@ def update_status(
 ):
     req = get_request_or_404(db, request_id)
 
+    # Track previous assignment for email logic
+    previous_assignee = req.assigned_to_member_id
+    new_assignee_id = body.assigned_to_member_id
+
+    # Validate assignee if provided (including explicit unassign via null)
+    assignee: Optional[models.Member] = None
+    if new_assignee_id is not None:
+        assignee = db.get(models.Member, new_assignee_id)
+        if not assignee:
+            raise HTTPException(status_code=400, detail="Assigned member not found")
+        if not assignee.is_active:
+            raise HTTPException(status_code=400, detail="Assigned member is inactive")
+
+    # Apply updates
     req.status = body.status
-    req.updated_at = datetime.utcnow()
     req.closed_at = datetime.utcnow() if body.status == "CLOSED" else None
 
+    # Only touch assignment fields if assigned_to_member_id was included in payload
+    # (Pydantic will include it even if null; your UI sends null for Unassigned)
+    req.assigned_to_member_id = new_assignee_id
+    req.assigned_at = datetime.utcnow() if new_assignee_id else None
+
+    req.updated_at = datetime.utcnow()
     db.commit()
-    return {"ok": True}
+
+    email_sent = False
+    email_error: Optional[str] = None
+
+    # ✅ Send email ONLY when assignment changes to a real person
+    if new_assignee_id and new_assignee_id != previous_assignee and assignee:
+        try:
+            _send_assignment_email(db, req, assignee)
+            email_sent = True
+        except Exception as e:
+            email_error = str(e)
+
+    # Return extra info (frontend can ignore, or display)
+    return {"ok": True, "email_sent": email_sent, "email_error": email_error}
 
 
 @router.patch("/{request_id}/decision")
