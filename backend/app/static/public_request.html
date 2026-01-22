@@ -3,209 +3,257 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>London Lions – Public Request</title>
+  <title>Lions – Public Request</title>
 
   <style>
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    body{
+      margin:0;
+      font-family: Arial, sans-serif;
       background: radial-gradient(circle at top, #0f1b34, #060b18);
-      color: #e8eefc;
+      color:#e8eefc;
     }
-
-    .topbar {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      padding: 14px 18px;
-      display: flex;
-      justify-content: flex-end;
-      z-index: 999;
-      pointer-events: none;
+    .page{
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:20px;
     }
-
-    .members-btn {
-      pointer-events: auto;
-      border: 0;
-      border-radius: 12px;
-      padding: 12px 16px;
-      background: #ff0000;
-      color: #ffff00;
-      font-weight: 900;
-      letter-spacing: .04em;
-      cursor: pointer;
-      box-shadow: 0 18px 40px rgba(0,0,0,.45);
+    .container{
+      width:100%;
+      max-width:760px;
     }
-
-    .wrap {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 100px 18px 30px;
+    .hero{
+      text-align:center;
+      margin-bottom:20px;
     }
-
-    .card {
-      width: 100%;
-      max-width: 820px;
-      background: rgba(10, 18, 40, 0.82);
-      border: 1px solid rgba(255,255,255,.08);
-      border-radius: 22px;
-      box-shadow: 0 30px 90px rgba(0,0,0,.5);
-      padding: 26px;
+    .hero h1{
+      margin:0;
+      font-size:34px;
+      font-weight:900;
+      text-shadow:0 3px 18px rgba(0,0,0,.35);
     }
-
-    /* ✅ LOGO */
-    .public-logo-wrap {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      margin-bottom: 22px;
+    .hero p{
+      margin:8px 0 0;
+      color:#b9c7ef;
+      font-weight:700;
     }
-
-    .public-logo {
-      max-width: 320px; /* ~80% larger */
-      width: 100%;
-      height: auto;
-      filter: drop-shadow(0 8px 18px rgba(0,0,0,.45));
+    .card{
+      background:#0b1328;
+      border:1px solid #233255;
+      border-radius:22px;
+      padding:22px;
+      box-shadow:0 30px 80px rgba(0,0,0,.45);
     }
-
-    /* ✅ CLUB NAME UNDER LOGO */
-    .club-name {
-      margin-top: 10px;
-      text-align: center;
-      font-size: 22px;
-      font-weight: 900;
-      color: #ffd700; /* BRIGHT YELLOW */
-      letter-spacing: .04em;
+    .row{
+      display:flex;
+      gap:14px;
+      flex-wrap:wrap;
     }
-
-    h1 { margin: 0 0 6px; font-size: 34px; }
-    p { margin: 0 0 22px; color: #b9c7ef; font-weight: 600; }
-
-    label {
+    .col{
+      flex:1 1 240px;
+      min-width:240px;
+    }
+    label{
       display:block;
-      margin: 14px 0 8px;
-      font-weight: 800;
-      color: #cfe0ff;
-      text-transform: uppercase;
-      font-size: 12px;
-      letter-spacing: .04em;
+      margin:12px 0 8px;
+      font-weight:800;
+      color:#cfe0ff;
     }
-
-    input, select, textarea {
-      width: 100%;
-      padding: 14px;
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,.12);
+    input, textarea, select{
+      width:100%;
+      padding:12px;
+      border-radius:14px;
+      border:1px solid #243458;
       background: rgba(7,12,28,.75);
-      color: #e8eefc;
-      outline: none;
-      font-size: 15px;
+      color:#e8eefc;
+      outline:none;
+      font-size:15px;
+      box-sizing:border-box;
+    }
+    textarea{ min-height:120px; resize:vertical; }
+
+    .clubPicker{
+      position:relative;
+    }
+    .results{
+      position:absolute;
+      z-index:50;
+      top:100%;
+      left:0;
+      right:0;
+      background:#0b1328;
+      border:1px solid #233255;
+      border-top:none;
+      border-radius:0 0 14px 14px;
+      overflow:hidden;
+      max-height:260px;
+      overflow-y:auto;
+      display:none;
+    }
+    .resultItem{
+      padding:10px 12px;
+      cursor:pointer;
+      border-bottom:1px solid rgba(35,50,85,.45);
+    }
+    .resultItem:hover{
+      background:rgba(58,115,255,.18);
+    }
+    .resultItem small{
+      display:block;
+      color:#9fb0e6;
+      margin-top:3px;
+      font-weight:700;
     }
 
-    textarea { min-height: 140px; resize: vertical; }
-
-    .row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
+    .pill{
+      display:inline-flex;
+      gap:10px;
+      align-items:center;
+      padding:10px 12px;
+      background:rgba(58,115,255,.14);
+      border:1px solid rgba(58,115,255,.35);
+      border-radius:999px;
+      margin-top:10px;
+      font-weight:800;
     }
+    .pill span{ color:#b9c7ef; font-weight:800; }
+    .pill b{ color:#e8eefc; }
 
-    .btnrow {
-      display: flex;
-      gap: 12px;
-      margin-top: 18px;
+    .actions{
+      display:flex;
+      gap:12px;
+      margin-top:16px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
     }
-
-    .btn {
-      border: 0;
-      border-radius: 14px;
-      padding: 14px 18px;
-      font-weight: 900;
-      cursor: pointer;
+    button{
+      padding:13px 16px;
+      border-radius:16px;
+      border:none;
+      background:#3a73ff;
+      color:#fff;
+      font-weight:900;
+      font-size:15px;
+      cursor:pointer;
+      box-shadow:0 18px 36px rgba(0,0,0,.35);
     }
-
-    .btn-primary { background: #3a73ff; color: #fff; }
-    .btn-secondary { background: rgba(255,255,255,.12); color: #fff; }
-
-    .msg {
-      margin-top: 14px;
-      font-weight: 700;
-      color: #b9c7ef;
+    button:hover{ filter:brightness(1.1); }
+    .secondary{
+      background:transparent;
+      border:1px solid #233255;
+      color:#cfe0ff;
+      box-shadow:none;
     }
+    .secondary:hover{ background:rgba(255,255,255,.06); }
 
-    @media (max-width: 720px) {
-      .row { grid-template-columns: 1fr; }
-      .public-logo { max-width: 240px; }
-      .club-name { font-size: 20px; }
+    .msg{
+      margin-top:14px;
+      font-weight:800;
+      color:#ffb4b4;
+      display:none;
+    }
+    .ok{ color:#b9ffcf; }
+
+    .footerLinks{
+      margin-top:14px;
+      text-align:center;
+      color:#9fb0e6;
+      font-size:13px;
+      font-weight:700;
+    }
+    .footerLinks a{
+      color:#9fb0e6;
+      text-decoration:none;
+      font-weight:800;
+    }
+    .footerLinks a:hover{ text-decoration:underline; }
+
+    @media (max-width: 520px){
+      .hero h1{ font-size:28px; }
+      .actions{ justify-content:stretch; }
+      button{ width:100%; }
     }
   </style>
 </head>
 
 <body>
-  <div class="topbar">
-    <button class="members-btn" id="membersBtn" type="button">MEMBERS</button>
-  </div>
-
-  <div class="wrap">
-    <div class="card">
-
-      <!-- ✅ LOGO + CLUB NAME -->
-      <div class="public-logo-wrap">
-        <img
-          class="public-logo"
-          src="/static/images/lions_emblem.png"
-          alt="London Ohio Lions Club"
-        />
-        <div class="club-name">London Ohio Lion’s Club</div>
+  <div class="page">
+    <div class="container">
+      <div class="hero">
+        <h1>Public Help Request</h1>
+        <p>Select your club, then submit your request.</p>
       </div>
 
-      <h1>Request Assistance</h1>
-      <p>Public Request Form</p>
-
-      <label for="category">Category</label>
-      <select id="category">
-        <option value="">Select a category</option>
-        <option value="EYE_CARE">Eye Care</option>
-        <option value="COMMUNITY_ASSISTANCE">Community Assistance</option>
-      </select>
-
-      <div class="row">
-        <div>
-          <label for="name">Your Name</label>
-          <input id="name" placeholder="Jane Doe" />
+      <div class="card">
+        <!-- CLUB SEARCH -->
+        <label for="clubSearch">Find your club</label>
+        <div class="clubPicker">
+          <input id="clubSearch" type="text" placeholder="Type club name or code (slug)…" autocomplete="off" />
+          <div id="clubResults" class="results"></div>
         </div>
-        <div>
-          <label for="phone">Phone</label>
-          <input id="phone" placeholder="(555)555-5555" inputmode="tel" />
-        </div>
-      </div>
 
-      <div class="row">
-        <div>
-          <label for="email">Email (Optional)</label>
-          <input id="email" placeholder="jane@example.com" />
+        <div id="selectedClubPill" class="pill" style="display:none;">
+          <span>Selected club:</span>
+          <b id="selectedClubName">—</b>
+          <span style="opacity:.75;">(code:</span><b id="selectedClubSlug" style="opacity:.95;">—</b><span style="opacity:.75;">)</span>
         </div>
-        <div>
+
+        <hr style="margin:18px 0; border:none; border-top:1px solid rgba(35,50,85,.6);" />
+
+        <!-- REQUEST FORM -->
+        <form id="publicRequestForm">
+          <div class="row">
+            <div class="col">
+              <label for="fullName">Your Name</label>
+              <input id="fullName" type="text" placeholder="Jane Doe" required />
+            </div>
+            <div class="col">
+              <label for="email">Email</label>
+              <input id="email" type="email" placeholder="jane@example.com" required />
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="col">
+              <label for="phone">Phone (optional)</label>
+              <input id="phone" type="text" placeholder="(555) 555-5555" inputmode="tel" />
+            </div>
+            <div class="col">
+              <label for="category">Category</label>
+              <select id="category" required>
+                <option value="" selected disabled>Select a category…</option>
+                <option value="Eye Care">Eye Care</option>
+                <option value="Community Assistance">Community Assistance</option>
+                <option value="Membership">Membership</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- ✅ REQUIRED by your backend schema -->
           <label for="address">Address</label>
-          <input id="address" placeholder="123 Main St, London, OH" />
+          <input id="address" type="text" placeholder="123 Main St, London, OH 43140" required />
+
+          <label for="message">Request Details</label>
+          <textarea id="message" placeholder="Tell us what you need…" required></textarea>
+
+          <div class="actions">
+            <button id="submitBtn" type="submit">Submit Request</button>
+            <button id="resetBtn" type="button" class="secondary">Reset</button>
+            <button id="membersBtn" type="button" class="secondary">Members</button>
+          </div>
+
+          <div id="statusMsg" class="msg"></div>
+        </form>
+
+        <div class="footerLinks">
+          Powered by Lions App • <a href="/static/index.html">Member Login</a>
         </div>
       </div>
-
-      <label for="desc">Describe Your Request</label>
-      <textarea id="desc" placeholder="Tell us what you need help with..."></textarea>
-
-      <div class="btnrow">
-        <button class="btn btn-primary" id="submitBtn" type="button">Submit Request</button>
-        <button class="btn btn-secondary" id="resetBtn" type="button">Reset</button>
-      </div>
-
-      <div class="msg" id="msg"></div>
     </div>
   </div>
 
-  <script type="module" src="/static/js/public_request.js"></script>
+  <script type="module" src="/static/js/public_request_saas.js"></script>
 </body>
 </html>

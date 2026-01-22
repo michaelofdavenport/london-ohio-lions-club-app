@@ -309,7 +309,7 @@
       <div class="card-b">
         <div class="toolbar">
           <div class="left-tools">
-            <input id="q" placeholder="Search name / email / phone" />
+            <input id="q" placeholder="Search name / email / phone" autocomplete="off" />
             <select id="filterActive">
               <option value="all">All</option>
               <option value="active">Active only</option>
@@ -346,6 +346,67 @@
     </div>
 
     <!-- ========================= -->
+    <!-- CARD 1.5: OWNER TOOLS     -->
+    <!-- ========================= -->
+    <div class="card" id="ownerToolsSection" style="display:none;">
+      <div class="card-h">
+        <div>Owner Tools</div>
+        <div class="muted">OWNER-only actions</div>
+      </div>
+
+      <div class="card-b">
+        <div class="toolbar">
+          <div class="left-tools">
+            <button class="btn btn-primary" id="ownerPromoteAdminBtn" type="button">Promote / Demote Admin</button>
+            <button class="btn btn-secondary" id="ownerTransferBtn" type="button">Transfer Ownership</button>
+            <button class="btn btn-secondary" id="ownerClubSettingsBtn" type="button">Update Club Settings</button>
+          </div>
+
+          <div class="right-tools">
+            <span class="muted">Restricted to club OWNER.</span>
+          </div>
+        </div>
+
+        <div class="msg" id="ownerToolsMsg"></div>
+      </div>
+    </div>
+
+    <!-- ========================= -->
+    <!-- CARD 1.75: BILLING/PLANS  -->
+    <!-- ========================= -->
+    <div class="card" id="billingSection" style="display:none;">
+      <div class="card-h">
+        <div>Billing / Plans</div>
+        <div class="muted" id="billingHint">ADMIN/OWNER • Stripe</div>
+      </div>
+
+      <div class="card-b">
+        <div class="toolbar">
+          <div class="left-tools">
+            <div class="mono">
+              Plan: <span id="billingPlan">—</span> &nbsp;•&nbsp;
+              Status: <span id="billingStatus">—</span> &nbsp;•&nbsp;
+              Renews: <span id="billingPeriodEnd">—</span>
+
+              <div id="trialLine" class="muted" style="margin-top:8px;"></div>
+              <div id="lockLine" class="muted" style="margin-top:6px;"></div>
+              <button id="startTrialBtn" class="btn btn-secondary" style="margin-top:10px; display:none;" type="button">
+                Start Free Trial (7 days)
+              </button>
+            </div>
+          </div>
+
+          <div class="right-tools">
+            <button class="btn btn-primary" id="billingUpgradeBtn" type="button">Upgrade to PRO</button>
+            <button class="btn btn-secondary" id="billingManageBtn" type="button">Manage in Stripe</button>
+          </div>
+        </div>
+
+        <div class="msg" id="billingMsg"></div>
+      </div>
+    </div>
+
+    <!-- ========================= -->
     <!-- CARD 2: ADMIN REQUESTS    -->
     <!-- ========================= -->
     <div class="card">
@@ -357,7 +418,7 @@
       <div class="card-b">
         <div class="toolbar">
           <div class="left-tools">
-            <input id="reqQ" placeholder="Search name / email / description" />
+            <input id="reqQ" placeholder="Search name / email / description" autocomplete="off" />
             <select id="reqStatus">
               <option value="">All Statuses</option>
               <option value="PENDING">PENDING</option>
@@ -407,7 +468,7 @@
       <div class="card-b">
         <div class="toolbar">
           <div class="left-tools">
-            <input id="testEmailTo" placeholder="Send to (optional, defaults to your login email)" style="min-width:320px;" />
+            <input id="testEmailTo" placeholder="Send to (optional, defaults to your login email)" style="min-width:320px;" autocomplete="email" />
             <button class="btn btn-primary" id="sendTestEmailBtn" type="button">Send Test Email</button>
           </div>
         </div>
@@ -427,54 +488,62 @@
         <div id="modalTitle">Add Member</div>
         <div class="muted" id="modalIdHint"></div>
       </div>
+
       <div class="modal-b">
-        <div class="grid">
-          <div>
-            <label for="m_name">Full Name</label>
-            <input id="m_name" />
-          </div>
-          <div>
-            <label for="m_email">Email</label>
-            <input id="m_email" />
-          </div>
-          <div>
-            <label for="m_phone">Phone</label>
-            <input id="m_phone" />
+        <!-- ✅ NEW: wrap in a form so Enter key behaves predictably -->
+        <form id="memberForm" onsubmit="return false;">
+          <div class="grid">
+            <div>
+              <label for="m_name">Full Name</label>
+              <input id="m_name" autocomplete="name" />
+            </div>
+
+            <div>
+              <label for="m_email">Email</label>
+              <input id="m_email" autocomplete="email" inputmode="email" />
+            </div>
+
+            <div>
+              <label for="m_phone">Phone</label>
+              <input id="m_phone" autocomplete="tel" inputmode="tel" />
+            </div>
+
+            <div class="full">
+              <label for="m_address">Address</label>
+              <input id="m_address" autocomplete="street-address" />
+            </div>
+
+            <div>
+              <label for="m_since">Member Since</label>
+              <input id="m_since" type="date" />
+            </div>
+
+            <div>
+              <label for="m_bday">Birthday</label>
+              <input id="m_bday" type="date" />
+            </div>
+
+            <div>
+              <label for="m_role">Role</label>
+              <select id="m_role">
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+
+            <div class="full" id="passwordBlock">
+              <label for="m_password">Password (required for new member)</label>
+              <input id="m_password" type="password" placeholder="Min 8 characters" autocomplete="new-password" />
+            </div>
           </div>
 
-          <div class="full">
-            <label for="m_address">Address</label>
-            <input id="m_address" />
+          <div class="modal-actions">
+            <button class="btn btn-secondary" id="cancelBtn" type="button">Cancel</button>
+            <button class="btn btn-primary" id="saveBtn" type="button">Save</button>
           </div>
 
-          <div>
-            <label for="m_since">Member Since</label>
-            <input id="m_since" type="date" />
-          </div>
-          <div>
-            <label for="m_bday">Birthday</label>
-            <input id="m_bday" type="date" />
-          </div>
-          <div>
-            <label for="m_role">Role</label>
-            <select id="m_role">
-              <option value="member">Member</option>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
-
-          <div class="full" id="passwordBlock">
-            <label for="m_password">Password (required for new member)</label>
-            <input id="m_password" type="password" placeholder="Min 8 characters" />
-          </div>
-        </div>
-
-        <div class="modal-actions">
-          <button class="btn btn-secondary" id="cancelBtn" type="button">Cancel</button>
-          <button class="btn btn-primary" id="saveBtn" type="button">Save</button>
-        </div>
-
-        <div class="msg" id="modalMsg"></div>
+          <div class="msg" id="modalMsg"></div>
+        </form>
       </div>
     </div>
   </div>
@@ -490,37 +559,40 @@
       </div>
 
       <div class="modal-b">
-        <div class="grid">
-          <div class="full">
-            <label>Requester</label>
-            <div class="mono" id="reqModalRequester">—</div>
+        <!-- ✅ NEW: form wrapper (harmless, prevents odd Enter submits) -->
+        <form id="reqForm" onsubmit="return false;">
+          <div class="grid">
+            <div class="full">
+              <label>Requester</label>
+              <div class="mono" id="reqModalRequester">—</div>
+            </div>
+
+            <div class="full">
+              <label>Address</label>
+              <div class="mono" id="reqModalAddress">—</div>
+            </div>
+
+            <div class="full">
+              <label>Description</label>
+              <div class="mono" id="reqModalDesc" style="white-space:pre-wrap;">—</div>
+            </div>
+
+            <div class="full">
+              <label for="reqDecisionNote">Decision Note (optional)</label>
+              <textarea id="reqDecisionNote" placeholder="Why was this approved/denied? (optional)"></textarea>
+            </div>
           </div>
 
-          <div class="full">
-            <label>Address</label>
-            <div class="mono" id="reqModalAddress">—</div>
+          <div class="divider"></div>
+
+          <div class="modal-actions">
+            <button class="btn btn-secondary" id="reqCancelBtn" type="button">Cancel</button>
+            <button class="btn btn-danger" id="reqDenyBtn" type="button">Deny</button>
+            <button class="btn btn-primary" id="reqApproveBtn" type="button">Approve</button>
           </div>
 
-          <div class="full">
-            <label>Description</label>
-            <div class="mono" id="reqModalDesc" style="white-space:pre-wrap;">—</div>
-          </div>
-
-          <div class="full">
-            <label for="reqDecisionNote">Decision Note (optional)</label>
-            <textarea id="reqDecisionNote" placeholder="Why was this approved/denied? (optional)"></textarea>
-          </div>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="modal-actions">
-          <button class="btn btn-secondary" id="reqCancelBtn" type="button">Cancel</button>
-          <button class="btn btn-danger" id="reqDenyBtn" type="button">Deny</button>
-          <button class="btn btn-primary" id="reqApproveBtn" type="button">Approve</button>
-        </div>
-
-        <div class="msg" id="reqModalMsg"></div>
+          <div class="msg" id="reqModalMsg"></div>
+        </form>
       </div>
     </div>
   </div>

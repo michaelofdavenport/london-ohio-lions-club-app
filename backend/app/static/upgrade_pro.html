@@ -1,0 +1,123 @@
+<!-- app/static/upgrade_pro.html -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Upgrade to PRO</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; background: #f6f7fb; }
+      .wrap { max-width: 760px; margin: 60px auto; padding: 24px; }
+      .card { background: white; border-radius: 14px; padding: 28px; box-shadow: 0 6px 18px rgba(0,0,0,.08); }
+      h1 { margin: 0 0 10px; }
+      p { line-height: 1.5; }
+      .muted { color: #555; }
+      .btns { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+      button, a.btn {
+        display: inline-block;
+        padding: 12px 16px;
+        border-radius: 10px;
+        border: 0;
+        cursor: pointer;
+        text-decoration: none;
+        font-weight: 700;
+      }
+      .primary { background: #1f6feb; color: white; }
+      .ghost { background: #e9eef8; color: #1b2a4a; }
+      .danger { background: #ffe9e9; color: #7a1f1f; }
+      .small { font-size: 13px; margin-top: 14px; }
+      code { background: #f0f2f8; padding: 2px 6px; border-radius: 6px; }
+      #status { margin-top: 14px; color: #7a1f1f; }
+    </style>
+  </head>
+
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>That feature is PRO-only 🔐</h1>
+        <p class="muted">
+          Your club is currently on the <b>FREE</b> plan. The page you tried to access requires a
+          <b>PRO subscription</b>.
+        </p>
+
+        <p>
+          PRO unlocks:
+          <ul>
+            <li>Admin Tools</li>
+            <li>Reports & Exports</li>
+          </ul>
+        </p>
+
+        <div class="btns">
+          <button class="primary" id="upgradeBtn">Upgrade to PRO</button>
+          <a class="btn ghost" href="/static/dashboard.html">Back to Dashboard</a>
+          <button class="danger" id="logoutBtn">Log out</button>
+        </div>
+
+        <div id="status" class="small"></div>
+
+        <p class="small muted">
+          If you expected to have PRO already, your admin may need to finish payment or your club plan
+          may not be set to <code>PRO</code> yet.
+        </p>
+      </div>
+    </div>
+
+    <script>
+      function getToken() {
+        return localStorage.getItem("token") || localStorage.getItem("access_token") || "";
+      }
+
+      async function startCheckout() {
+        const statusEl = document.getElementById("status");
+        statusEl.textContent = "";
+
+        const token = getToken();
+        if (!token) {
+          statusEl.textContent = "You’re not logged in. Please log in first.";
+          window.location.href = "/static/index.html";
+          return;
+        }
+
+        try {
+          const res = await fetch("/billing/checkout", {
+            method: "POST",
+            headers: {
+              "Authorization": "Bearer " + token,
+              "Content-Type": "application/json",
+              "Accept": "application/json",
+            },
+            body: JSON.stringify({}),
+          });
+
+          const data = await res.json().catch(() => ({}));
+
+          if (!res.ok) {
+            statusEl.textContent = (data && data.detail && (data.detail.message || JSON.stringify(data.detail))) ||
+              "Checkout failed. Please try again.";
+            return;
+          }
+
+          // Common patterns: {url: "..."} or {checkout_url: "..."}
+          const url = data.url || data.checkout_url || data.session_url;
+          if (!url) {
+            statusEl.textContent = "Checkout started, but no redirect URL was returned.";
+            return;
+          }
+
+          window.location.href = url;
+        } catch (err) {
+          statusEl.textContent = "Network error starting checkout. Please try again.";
+        }
+      }
+
+      document.getElementById("upgradeBtn").addEventListener("click", startCheckout);
+
+      document.getElementById("logoutBtn").addEventListener("click", () => {
+        localStorage.removeItem("token");
+        localStorage.removeItem("access_token");
+        window.location.href = "/static/public_request.html";
+      });
+    </script>
+  </body>
+</html>

@@ -1,3 +1,4 @@
+// app/static/js/inbox.js
 import { apiFetch, clearToken } from "./auth.js";
 import { requireAdminOrRedirect } from "./admin_guard.js";
 
@@ -42,7 +43,10 @@ function shortDesc(d) {
 // Nav / header buttons
 // -----------------------
 on("dashBtn", "click", () => (window.location.href = "/static/dashboard.html"));
-on("adminToolsBtn", "click", () => (window.location.href = "/admin/tools"));
+
+// ✅ FIX: your working Admin Tools page is static (per your screenshot)
+on("adminToolsBtn", "click", () => (window.location.href = "/static/admin_tools.html"));
+
 on("logoutBtn", "click", () => {
   clearToken();
   window.location.href = "/static/public_request.html";
@@ -75,7 +79,16 @@ on("modalBackdrop", "click", (e) => {
 async function loadRoster() {
   try {
     const resp = await apiFetch("/admin/members");
-    roster = resp.ok ? await resp.json() : [];
+    if (!resp.ok) return (roster = []);
+
+    const data = await resp.json().catch(() => []);
+    roster = Array.isArray(data)
+      ? data
+      : Array.isArray(data.members)
+        ? data.members
+        : Array.isArray(data.items)
+          ? data.items
+          : [];
   } catch {
     roster = [];
   }
@@ -87,9 +100,8 @@ function render(rows) {
 
   tbody.innerHTML = "";
 
-  if ($("countHint")) {
-    $("countHint").textContent = `${rows.length} request${rows.length === 1 ? "" : "s"}`;
-  }
+  const countHint = $("countHint");
+  if (countHint) countHint.textContent = `${rows.length} request${rows.length === 1 ? "" : "s"}`;
 
   for (const r of rows) {
     const assigned = r.assigned_to_name
@@ -113,9 +125,8 @@ function render(rows) {
     tbody.appendChild(tr);
   }
 
-  tbody.querySelectorAll("button[data-act='open']").forEach((b) =>
-    b.addEventListener("click", onOpen)
-  );
+  // ❌ No per-button wiring here anymore.
+  // ✅ We use event delegation below so re-renders never break buttons.
 }
 
 function applyFilters() {
@@ -127,7 +138,7 @@ function applyFilters() {
   const status = statusEl?.value || "";
   const assigned = assignedEl?.value || "";
 
-  let rows = all.slice();
+  let rows = Array.isArray(all) ? all.slice() : [];
 
   if (status) rows = rows.filter((r) => String(r.status || "").toUpperCase() === status);
   if (assigned === "assigned") rows = rows.filter((r) => r.assigned_to_member_id != null);
@@ -163,7 +174,14 @@ async function loadRequests() {
     const resp = await apiFetch(`/admin/requests?${params.toString()}`);
     if (!resp.ok) throw new Error("Failed to load");
 
-    all = await resp.json();
+    const data = await resp.json().catch(() => []);
+    all = Array.isArray(data)
+      ? data
+      : Array.isArray(data.requests)
+        ? data.requests
+        : Array.isArray(data.items)
+          ? data.items
+          : [];
 
     if (msgEl) msgEl.textContent = "";
     applyFilters();
@@ -210,18 +228,20 @@ function renderNotes(notes) {
         .join("\n\n")
     : "—";
 
-  try { el.scrollTop = 0; } catch {}
+  try {
+    el.scrollTop = 0;
+  } catch {}
 }
 
 // -----------------------
 // OPEN MODAL
 // -----------------------
-async function onOpen(e) {
-  const id = Number(e.currentTarget.dataset.id);
-  const r = all.find((x) => x.id === id);
+async function openRequestById(id) {
+  const rid = Number(id);
+  const r = (Array.isArray(all) ? all : []).find((x) => x.id === rid);
   if (!r) return;
 
-  activeId = id;
+  activeId = rid;
 
   if ($("modalTitle")) $("modalTitle").textContent = "Request";
   if ($("modalHint")) $("modalHint").textContent = `#${r.id} • ${r.category} • ${r.status}`;
@@ -248,7 +268,7 @@ async function onOpen(e) {
     opt0.textContent = "Unassigned";
     sel.appendChild(opt0);
 
-    roster
+    (Array.isArray(roster) ? roster : [])
       .filter((m) => m.is_active)
       .forEach((m) => {
         const opt = document.createElement("option");
@@ -262,15 +282,29 @@ async function onOpen(e) {
 
   if ($("mStatus")) $("mStatus").value = String(r.status || "PENDING").toUpperCase();
 
-  const notes = await loadNotes(id);
+  const notes = await loadNotes(rid);
   renderNotes(notes);
 
   openModal();
 }
 
+// ✅ BULLETPROOF: event delegation for Open buttons (survives re-renders)
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-act='open']");
+  if (!btn) return;
+
+  const id = btn.dataset.id;
+  if (!id) {
+    console.warn("Open clicked but missing data-id", btn);
+    return alert("Open failed: missing request id.");
+  }
+
+  openRequestById(id);
+});
+
 // -----------------------
 // SAVE ASSIGN + STATUS
-// Uses ONLY /admin/requests/{id}/status
+// NOW uses /admin/requests/{id}/assign-status to trigger email
 // -----------------------
 async function saveAssignAndStatus() {
   if (!activeId) return;
@@ -280,7 +314,7 @@ async function saveAssignAndStatus() {
     const assignedVal = $("mAssign")?.value || "";
     const statusVal = $("mStatus")?.value || "PENDING";
 
-    const resp = await apiFetch(`/admin/requests/${activeId}/status`, {
+    const resp = await apiFetch(`/admin/requests/${activeId}/assign-status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -298,9 +332,17 @@ async function saveAssignAndStatus() {
       throw new Error(detail);
     }
 
-    if ($("modalMsg")) $("modalMsg").textContent = "Saved.";
-    await loadRequests();
+    // show email result if provided
+    let msg = "Saved.";
+    try {
+      const data = await resp.json();
+      if (data?.email_sent) msg = "Saved + email sent.";
+      else if (data?.email_error) msg = `Saved, but email failed: ${data.email_error}`;
+    } catch {}
 
+    if ($("modalMsg")) $("modalMsg").textContent = msg;
+
+    await loadRequests();
     const notes = await loadNotes(activeId);
     renderNotes(notes);
   } catch (e) {

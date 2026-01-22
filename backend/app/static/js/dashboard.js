@@ -39,33 +39,44 @@ $("viewHoursBtn")?.addEventListener("click", () => {
 });
 
 // ----------------------------
-// Admin Tools button (ADMIN ONLY)
-// Requires dashboard.html to include:
-// <button class="btn btn-nav" id="adminToolsBtn" style="display:none;">Admin Tools</button>
-//
-// IMPORTANT:
-// - /admin/tools is an API route (JSON) and WILL 401 in the address bar.
-// - Admin UI should be a static page that uses apiFetch() to call admin APIs.
+// Admin Tools button (OWNER / ADMIN / SUPER ADMIN)
+// Uses /member/me (NOT /admin/ping)
 // ----------------------------
 async function setupAdminToolsButton() {
   const btn = $("adminToolsBtn");
   if (!btn) return;
 
+  btn.style.display = "none";
+
   try {
     const resp = await apiFetch("/member/me");
-    if (!resp.ok) return;
+
+    if (resp.status === 401) {
+      clearToken();
+      window.location.href = "/static/index.html";
+      return;
+    }
+
+    if (!resp.ok) {
+      console.warn("member/me failed:", resp.status);
+      return;
+    }
 
     const me = await resp.json();
 
-    if (me?.is_admin) {
+    const role = String(me?.role || "").toUpperCase();
+    const isAdmin = !!me?.is_admin;
+    const isSuper = !!me?.is_super_admin;
+    const isOwner = role === "OWNER";
+
+    if (isAdmin || isSuper || isOwner) {
       btn.style.display = "inline-flex";
       btn.addEventListener("click", () => {
-        // ✅ go to the HTML page
         window.location.href = "/static/admin_tools.html";
       });
     }
   } catch (err) {
-    console.error("Admin check failed:", err);
+    console.error("setupAdminToolsButton error:", err);
   }
 }
 
@@ -179,7 +190,6 @@ function renderUpcomingEvents(events) {
 async function loadUpcomingEvents() {
   $("upcomingEventsHint").textContent = "Loading…";
   try {
-    // Prefer member endpoint (includes private). If it doesn't exist, fallback to public.
     let resp = await apiFetch("/member/events?include_past=false").catch(() => null);
 
     if (!resp || !resp.ok) {
@@ -200,15 +210,13 @@ async function loadUpcomingEvents() {
 
 // ----------------------------
 // Widget 3: Service Hours YTD (CLUB-WIDE)
-// Uses backend endpoint: GET /member/service-hours/summary
-// Fallback: computes from current member entries if summary endpoint unavailable
 // ----------------------------
 function computeMemberYtdHours(entries) {
   const year = new Date().getFullYear();
   let total = 0;
 
   for (const e of entries || []) {
-    if (!e.service_date) continue; // "YYYY-MM-DD"
+    if (!e.service_date) continue;
     const y = Number(String(e.service_date).slice(0, 4));
     if (y !== year) continue;
 
@@ -224,7 +232,6 @@ async function loadServiceHoursYtdClubWide() {
   $("hoursYtdHint").textContent = "Loading…";
   $("hoursYtdValue").textContent = "—";
 
-  // 1) Preferred: club-wide endpoint
   try {
     const resp = await apiFetch("/member/service-hours/summary");
     if (!resp.ok) throw new Error("Summary endpoint not available");
@@ -240,7 +247,6 @@ async function loadServiceHoursYtdClubWide() {
     console.warn("Club-wide summary unavailable, falling back:", err);
   }
 
-  // 2) Fallback: compute from current member entries (keeps UI alive)
   try {
     const resp = await apiFetch("/member/service-hours");
     if (!resp.ok) throw new Error("Failed to load service hours");

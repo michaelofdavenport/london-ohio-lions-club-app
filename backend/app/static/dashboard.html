@@ -23,6 +23,7 @@
       align-items: center;
       justify-content: space-between;
       gap: 12px;
+      flex-wrap: wrap;
     }
 
     header .right {
@@ -183,11 +184,13 @@
       <button class="btn btn-nav" id="rosterBtn" type="button">Roster</button>
       <button class="btn btn-nav" id="eventsBtn" type="button">Events</button>
       <button class="btn btn-nav" id="hoursBtn" type="button">Service Hours</button>
-      <button class="btn btn-logout" id="logoutBtn" type="button">Logout</button>
-      <button class="btn btn-nav" id="adminToolsBtn" style="display:none;">
-  Admin Tools
-</button>
 
+      <!-- ✅ Admin Tools appears ONLY for OWNER / ADMIN / SUPER ADMIN -->
+      <button class="btn btn-nav" id="adminToolsBtn" type="button" style="display:none;">
+        Admin Tools
+      </button>
+
+      <button class="btn btn-logout" id="logoutBtn" type="button">Logout</button>
     </div>
   </header>
 
@@ -240,7 +243,6 @@
     Dashboard powered by London Lions Backend
   </footer>
 
-  <!-- ✅ All behavior lives in ONE place -->
   <script type="module" src="/static/js/dashboard.js"></script>
 </body>
 </html>

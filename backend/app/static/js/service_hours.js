@@ -1,25 +1,9 @@
 // app/static/js/service_hours.js
-import { requireAuth, apiFetch, clearToken } from "./auth.js";
+import { apiFetch, clearToken, requireAuth } from "./auth.js";
 
 requireAuth();
 
 const $ = (id) => document.getElementById(id);
-
-function fmtDate(yyyy_mm_dd) {
-  if (!yyyy_mm_dd) return "—";
-  const [y, m, d] = yyyy_mm_dd.split("-").map(Number);
-  if (!y || !m || !d) return yyyy_mm_dd;
-  return `${m}/${d}/${y}`;
-}
-
-function currentYear() {
-  return new Date().getFullYear();
-}
-
-function safeNum(n) {
-  const x = Number(n);
-  return Number.isFinite(x) ? x : 0;
-}
 
 function escapeHtml(s) {
   return String(s ?? "")
@@ -30,361 +14,270 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
-// -------------------------
+function displayMemberName(m) {
+  const name = (m?.full_name || "").trim();
+  return name ? name : (m?.email || "—");
+}
+
+function toISODateOnly(v) {
+  if (!v) return "";
+  const s = String(v);
+  return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
+function toMMDDYYYY(v) {
+  // expects YYYY-MM-DD from <input type="date">
+  if (!v) return "";
+  const [y, m, d] = String(v).split("-");
+  if (!y || !m || !d) return String(v);
+  return `${m}/${d}/${y}`;
+}
+
+function toYYYYMMDD(v) {
+  // accepts "MM/DD/YYYY" or "YYYY-MM-DD"
+  if (!v) return "";
+  const s = String(v).trim();
+  if (s.includes("-")) return s.slice(0, 10);
+  const parts = s.split("/");
+  if (parts.length !== 3) return s;
+  const [mm, dd, yyyy] = parts;
+  return `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
+}
+
+// ----------------------------
 // NAV
-// -------------------------
+// ----------------------------
 $("logoutBtn")?.addEventListener("click", () => {
   clearToken();
   window.location.href = "/static/public_request.html";
 });
+$("dashBtn")?.addEventListener("click", () => (window.location.href = "/static/dashboard.html"));
+$("rosterBtn")?.addEventListener("click", () => (window.location.href = "/static/roster.html"));
+$("eventsBtn")?.addEventListener("click", () => (window.location.href = "/static/events.html"));
+$("hoursBtn")?.addEventListener("click", () => (window.location.href = "/static/service_hours.html"));
 
-$("dashBtn")?.addEventListener("click", () => {
-  window.location.href = "/static/dashboard.html";
-});
-
-// -------------------------
+// ----------------------------
 // STATE
-// -------------------------
-let MEMBERS_BY_ID = new Map();     // id -> label
-let MY_MEMBER_ID = null;
-let CURRENT_ENTRIES = [];         // current loaded entries (for editing)
+// ----------------------------
+let me = null;
+let entries = [];
 
-// -------------------------
-// LOADERS
-// -------------------------
+// ----------------------------
+// LOAD ME (fix: show full_name, not email)
+// ----------------------------
 async function loadMe() {
-  const resp = await apiFetch("/member/me");
-  if (!resp.ok) throw new Error("Failed to load /member/me");
-  return await resp.json();
-}
+  const msgEl = $("msg");
+  try {
+    const resp = await apiFetch("/member/me");
+    if (!resp.ok) throw new Error("member/me failed");
+    me = await resp.json();
 
-async function loadRoster() {
-  const resp = await apiFetch("/member/roster");
-  if (!resp.ok) throw new Error("Failed to load roster");
-  return await resp.json();
-}
+    const sel = $("memberSelect");
+    // If your HTML uses a <select> for MEMBER NAME, we populate it.
+    // If it’s actually an <input>, we set value/text safely.
+    if (sel) {
+      if (sel.tagName === "SELECT") {
+        sel.innerHTML = "";
+        const opt = document.createElement("option");
+        opt.value = String(me?.id ?? "");
+        opt.textContent = displayMemberName(me);
+        sel.appendChild(opt);
+      } else {
+        sel.value = displayMemberName(me);
+      }
+    }
 
-async function loadHours() {
-  const resp = await apiFetch("/member/service-hours");
-  if (!resp.ok) throw new Error("Failed to load service hours");
-  return await resp.json();
-}
+    // If there’s a plain label somewhere:
+    const nameLabel = $("memberNameLabel");
+    if (nameLabel) nameLabel.textContent = displayMemberName(me);
 
-// -------------------------
-// RENDER
-// -------------------------
-function renderMemberSelect(me, roster) {
-  const sel = $("memberSelect");
-  sel.innerHTML = "";
-  sel.disabled = true; // per backend: logging is for current member
-
-  // build member map
-  MEMBERS_BY_ID = new Map();
-  for (const m of roster) {
-    const label = (m.full_name && m.full_name.trim()) ? m.full_name.trim() : m.email;
-    MEMBERS_BY_ID.set(m.id, label);
+    if (msgEl) msgEl.textContent = "";
+  } catch (e) {
+    console.error(e);
+    if (msgEl) msgEl.textContent = "Could not load member profile.";
   }
-
-  MY_MEMBER_ID = me.id;
-  const myLabel = MEMBERS_BY_ID.get(me.id) || (me.full_name?.trim() || me.email);
-
-  // show just "me"
-  const opt = document.createElement("option");
-  opt.value = String(me.id);
-  opt.textContent = myLabel;
-  sel.appendChild(opt);
 }
 
-function renderTable(hoursEntries) {
-  const rows = $("rows");
-  const empty = $("empty");
+// ----------------------------
+// RENDER TABLE (fix: show full_name when available)
+// ----------------------------
+function render(entriesToRender) {
+  const tbody = $("rows");
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+
   const countHint = $("countHint");
+  if (countHint) countHint.textContent = `${entriesToRender.length} entr${entriesToRender.length === 1 ? "y" : "ies"}`;
 
-  rows.innerHTML = "";
-  CURRENT_ENTRIES = Array.isArray(hoursEntries) ? hoursEntries : [];
-
-  if (!CURRENT_ENTRIES.length) {
-    empty.style.display = "block";
-    countHint.textContent = "0 entries";
-    $("ytdHeadline").textContent = `YTD Club Service Hours: 0.00`;
-    return;
-  }
-
-  empty.style.display = "none";
-  countHint.textContent = `${CURRENT_ENTRIES.length} entr${CURRENT_ENTRIES.length === 1 ? "y" : "ies"}`;
-
-  // YTD club total (current year, all entries returned)
-  const y = currentYear();
-  let ytdTotal = 0;
-  for (const e of CURRENT_ENTRIES) {
-    const yr = e.service_date ? Number(String(e.service_date).slice(0, 4)) : null;
-    if (yr === y) ytdTotal += safeNum(e.hours);
-  }
-  $("ytdHeadline").textContent = `YTD Club Service Hours: ${ytdTotal.toFixed(2)}`;
-
-  // sort newest service_date first
-  const sorted = [...CURRENT_ENTRIES].sort((a, b) => {
-    const ad = a.service_date || "";
-    const bd = b.service_date || "";
-    if (ad !== bd) return bd.localeCompare(ad);
-    return String(b.created_at || "").localeCompare(String(a.created_at || ""));
-  });
-
-  for (const e of sorted) {
-    const memberLabel = MEMBERS_BY_ID.get(e.member_id) || `Member #${e.member_id}`;
-    const serviceDate = fmtDate(e.service_date);
-    const hrs = safeNum(e.hours);
-
-    // We store location in activity and type in notes (current backend model)
-    const location = e.activity || "—";
-    const type = e.notes || "—";
-
-    const canEditDelete = (MY_MEMBER_ID != null && e.member_id === MY_MEMBER_ID);
+  for (const r of entriesToRender) {
+    // Try every likely field name so we don’t care what the backend returns.
+    const memberName =
+      (r.member_name || r.member_full_name || r.full_name || r.member?.full_name || "").trim() ||
+      (r.member_email || r.email || r.member?.email || "").trim() ||
+      displayMemberName(me);
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><strong>${escapeHtml(memberLabel)}</strong></td>
-      <td>${escapeHtml(serviceDate)}</td>
-      <td>${hrs.toFixed(2)}</td>
-      <td>${escapeHtml(location)}</td>
-      <td>${escapeHtml(type)}</td>
-      <td class="ytd">${ytdTotal.toFixed(2)}</td>
+      <td>${escapeHtml(memberName || "—")}</td>
+      <td>${escapeHtml(toISODateOnly(r.service_date) || "—")}</td>
+      <td>${escapeHtml(String(r.hours ?? "—"))}</td>
+      <td>${escapeHtml(r.activity || r.service_location || r.location || "—")}</td>
+      <td>${escapeHtml(r.notes || r.service_type || r.type || "—")}</td>
+      <td>${escapeHtml(String(r.club_ytd_hours ?? r.ytd_club_hours ?? r.ytd ?? "—"))}</td>
       <td>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn btn-sm btn-edit" data-action="edit" data-id="${e.id}" ${canEditDelete ? "" : "disabled"}>Edit</button>
-          <button class="btn btn-sm btn-del" data-action="delete" data-id="${e.id}" ${canEditDelete ? "" : "disabled"}>Delete</button>
-        </div>
+        <button class="btn btn-secondary btn-small" data-act="edit" data-id="${r.id}">Edit</button>
+        <button class="btn btn-danger btn-small" data-act="delete" data-id="${r.id}">Delete</button>
       </td>
     `;
-    rows.appendChild(tr);
+    tbody.appendChild(tr);
   }
 
-  // table-level click handling
-  rows.querySelectorAll("button[data-action]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const action = btn.dataset.action;
-      const id = Number(btn.dataset.id);
-      if (!id) return;
-
-      if (action === "edit") openEditModal(id);
-      if (action === "delete") await deleteEntry(id);
-    });
-  });
+  tbody.querySelectorAll("button[data-act]").forEach((btn) => btn.addEventListener("click", onRowAction));
 }
 
-// -------------------------
-// CREATE ENTRY
-// -------------------------
-async function addEntry() {
-  const service_date = $("serviceDate").value;
-  const hoursVal = $("serviceHours").value;
-  const serviceLocation = $("serviceLocation").value.trim();
-  const serviceType = $("serviceType").value.trim();
-
-  if (!service_date) return ($("msg").textContent = "Pick a service date.");
-  if (!hoursVal || Number(hoursVal) <= 0) return ($("msg").textContent = "Enter service hours (> 0).");
-  if (!serviceLocation) return ($("msg").textContent = "Enter service location.");
-  if (!serviceType) return ($("msg").textContent = "Select service type.");
-
-  $("addBtn").disabled = true;
-  $("msg").textContent = "Saving…";
+// ----------------------------
+// LOAD ENTRIES
+// ----------------------------
+async function loadEntries() {
+  const msgEl = $("msg");
+  if (msgEl) msgEl.textContent = "Loading…";
 
   try {
-    const payload = {
-      service_date,
-      hours: Number(hoursVal),
-      activity: serviceLocation, // Service Location
-      notes: serviceType,        // Service Type
-    };
+    const resp = await apiFetch("/member/service-hours");
+    if (!resp.ok) throw new Error("service-hours failed");
+    const data = await resp.json();
 
+    entries = Array.isArray(data)
+      ? data
+      : Array.isArray(data.items)
+        ? data.items
+        : Array.isArray(data.entries)
+          ? data.entries
+          : [];
+
+    if (msgEl) msgEl.textContent = "";
+    render(entries);
+  } catch (e) {
+    console.error(e);
+    entries = [];
+    render([]);
+    if (msgEl) msgEl.textContent = "Failed to load service hours.";
+  }
+}
+
+$("refreshBtn")?.addEventListener("click", loadEntries);
+
+// ----------------------------
+// ADD ENTRY
+// ----------------------------
+$("addBtn")?.addEventListener("click", async () => {
+  const msgEl = $("msg");
+  if (msgEl) msgEl.textContent = "";
+
+  const serviceDateEl = $("serviceDate");
+  const hoursEl = $("hours");
+  const locationEl = $("location");
+  const typeEl = $("type");
+
+  const service_date = toYYYYMMDD(serviceDateEl?.value || "") || null;
+  const hours = Number(hoursEl?.value || 0);
+  const activity = (typeEl?.value || "").trim() || null;
+  const notes = (locationEl?.value || "").trim() || null;
+
+  if (!service_date) return (msgEl.textContent = "Service date is required.");
+  if (!Number.isFinite(hours) || hours <= 0) return (msgEl.textContent = "Hours must be greater than 0.");
+
+  const payload = { service_date, hours, activity, notes };
+
+  try {
+    if (msgEl) msgEl.textContent = "Saving…";
     const resp = await apiFetch("/member/service-hours", {
       method: "POST",
       body: JSON.stringify(payload),
     });
 
     if (!resp.ok) {
-      const txt = await resp.text().catch(() => "");
-      console.error("Create failed:", txt);
-      $("msg").textContent = "Create failed. Check inputs.";
+      const t = await resp.text().catch(() => "");
+      console.error(t);
+      if (msgEl) msgEl.textContent = "Create failed.";
       return;
     }
 
-    $("msg").textContent = "✅ Entry added.";
-    $("serviceHours").value = "";
-    $("serviceLocation").value = "";
-    $("serviceType").value = "";
-    await refreshAll();
-  } catch (err) {
-    console.error(err);
-    $("msg").textContent = "Create failed (network/server).";
-  } finally {
-    $("addBtn").disabled = false;
-  }
-}
-
-// -------------------------
-// EDIT MODAL
-// -------------------------
-let EDITING_ID = null;
-
-function showModal(show) {
-  const bd = $("modalBackdrop");
-  bd.style.display = show ? "flex" : "none";
-}
-
-function findEntryById(id) {
-  return CURRENT_ENTRIES.find((e) => Number(e.id) === Number(id)) || null;
-}
-
-function openEditModal(entryId) {
-  const e = findEntryById(entryId);
-  if (!e) return;
-
-  EDITING_ID = e.id;
-
-  const memberLabel = MEMBERS_BY_ID.get(e.member_id) || `Member #${e.member_id}`;
-
-  $("modalTitle").textContent = "Edit Service Hours Entry";
-  $("modalId").textContent = `#${e.id}`;
-  $("modalHint").textContent = "";
-
-  $("editMember").value = memberLabel;
-  $("editDate").value = e.service_date || "";
-  $("editHours").value = safeNum(e.hours) ? String(safeNum(e.hours)) : "";
-  $("editLocation").value = e.activity || "";
-  $("editType").value = e.notes || "";
-
-  showModal(true);
-}
-
-$("modalCancel")?.addEventListener("click", () => {
-  EDITING_ID = null;
-  showModal(false);
-});
-
-$("modalBackdrop")?.addEventListener("click", (ev) => {
-  if (ev.target === $("modalBackdrop")) {
-    EDITING_ID = null;
-    showModal(false);
+    if (msgEl) msgEl.textContent = "";
+    await loadEntries();
+  } catch (e) {
+    console.error(e);
+    if (msgEl) msgEl.textContent = "Create failed (network/server).";
   }
 });
 
-$("modalSave")?.addEventListener("click", async () => {
-  if (!EDITING_ID) return;
+// ----------------------------
+// EDIT / DELETE
+// ----------------------------
+async function onRowAction(e) {
+  const id = Number(e.currentTarget.dataset.id);
+  const act = e.currentTarget.dataset.act;
+  const row = (entries || []).find((x) => Number(x.id) === id);
+  if (!row) return;
 
-  const service_date = $("editDate").value;
-  const hoursVal = $("editHours").value;
-  const location = $("editLocation").value.trim();
-  const type = $("editType").value.trim();
+  if (act === "delete") {
+    const ok = confirm("Delete this service hour entry?");
+    if (!ok) return;
 
-  if (!service_date) return ($("modalHint").textContent = "Service date is required.");
-  if (!hoursVal || Number(hoursVal) <= 0) return ($("modalHint").textContent = "Hours must be > 0.");
-  if (!location) return ($("modalHint").textContent = "Service location is required.");
-  if (!type) return ($("modalHint").textContent = "Service type is required.");
+    try {
+      const resp = await apiFetch(`/member/service-hours/${id}`, { method: "DELETE" });
+      if (!resp.ok) throw new Error("delete failed");
+      await loadEntries();
+    } catch (err) {
+      console.error(err);
+      alert("Delete failed.");
+    }
+    return;
+  }
 
-  $("modalSave").disabled = true;
-  $("modalHint").textContent = "Saving…";
+  if (act === "edit") {
+    // Simple prompt edit (keeps this file independent from any modal HTML changes)
+    const newDate = prompt("Service date (YYYY-MM-DD):", toISODateOnly(row.service_date) || "");
+    if (!newDate) return;
 
-  try {
+    const newHoursStr = prompt("Hours:", String(row.hours ?? ""));
+    if (!newHoursStr) return;
+
+    const newHours = Number(newHoursStr);
+    if (!Number.isFinite(newHours) || newHours <= 0) return alert("Hours must be > 0.");
+
+    const newActivity = prompt("Service type/activity:", String(row.activity ?? row.service_type ?? "")) ?? "";
+    const newNotes = prompt("Notes/location:", String(row.notes ?? row.service_location ?? "")) ?? "";
+
     const payload = {
-      service_date,
-      hours: Number(hoursVal),
-      activity: location,
-      notes: type,
+      service_date: toYYYYMMDD(newDate),
+      hours: newHours,
+      activity: newActivity.trim() || null,
+      notes: newNotes.trim() || null,
     };
 
-    const resp = await apiFetch(`/member/service-hours/${EDITING_ID}`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    });
-
-    if (!resp.ok) {
-      const txt = await resp.text().catch(() => "");
-      console.error("Update failed:", txt);
-      $("modalHint").textContent = "Update failed.";
-      return;
+    try {
+      const resp = await apiFetch(`/member/service-hours/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      if (!resp.ok) {
+        const t = await resp.text().catch(() => "");
+        console.error(t);
+        alert("Update failed.");
+        return;
+      }
+      await loadEntries();
+    } catch (err) {
+      console.error(err);
+      alert("Update failed (network/server).");
     }
-
-    $("modalHint").textContent = "✅ Saved.";
-    showModal(false);
-    EDITING_ID = null;
-    await refreshAll();
-  } catch (err) {
-    console.error(err);
-    $("modalHint").textContent = "Update failed (network/server).";
-  } finally {
-    $("modalSave").disabled = false;
-  }
-});
-
-// -------------------------
-// DELETE
-// -------------------------
-async function deleteEntry(entryId) {
-  const e = findEntryById(entryId);
-  if (!e) return;
-
-  const ok = confirm("Delete this service hours entry? This cannot be undone.");
-  if (!ok) return;
-
-  $("msg").textContent = "Deleting…";
-
-  try {
-    const resp = await apiFetch(`/member/service-hours/${entryId}`, {
-      method: "DELETE",
-    });
-
-    if (!resp.ok) {
-      const txt = await resp.text().catch(() => "");
-      console.error("Delete failed:", txt);
-      $("msg").textContent = "Delete failed.";
-      return;
-    }
-
-    $("msg").textContent = "✅ Deleted.";
-    await refreshAll();
-  } catch (err) {
-    console.error(err);
-    $("msg").textContent = "Delete failed (network/server).";
   }
 }
 
-// -------------------------
-// REFRESH
-// -------------------------
-async function refreshAll() {
-  $("msg").textContent = "Loading…";
-
-  const [me, roster, entries] = await Promise.all([
-    loadMe(),
-    loadRoster(),
-    loadHours(),
-  ]);
-
-  renderMemberSelect(me, roster);
-  renderTable(entries);
-
-  $("msg").textContent = "";
-}
-
-// -------------------------
-// INIT
-// -------------------------
-$("addBtn")?.addEventListener("click", addEntry);
-$("refreshBtn")?.addEventListener("click", refreshAll);
-
-// default date today
-(function initDate(){
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  $("serviceDate").value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-})();
-
-(async function init(){
-  try {
-    await refreshAll();
-  } catch (err) {
-    console.error(err);
-    $("msg").textContent = "Failed to load service hours (check token/server).";
-  }
-})();
+// ----------------------------
+// BOOT
+// ----------------------------
+await loadMe();
+await loadEntries();

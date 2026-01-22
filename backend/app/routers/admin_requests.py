@@ -54,7 +54,6 @@ class DecisionIn(BaseModel):
     decision_note: Optional[str] = None
 
 
-# ✅ UPDATED: status endpoint can also accept assignment
 class StatusIn(BaseModel):
     status: str = Field(pattern="^(PENDING|IN_PROGRESS|CLOSED|APPROVED|DENIED)$")
     assigned_to_member_id: Optional[int] = None
@@ -66,6 +65,13 @@ class AssignIn(BaseModel):
 
 class NoteIn(BaseModel):
     note: str
+
+
+# ✅ NEW: payload for the frontend endpoint it is ACTUALLY calling
+class AssignStatusIn(BaseModel):
+    status: str = Field(pattern="^(PENDING|IN_PROGRESS|CLOSED|APPROVED|DENIED)$")
+    assigned_to_member_id: Optional[int] = None
+    decision_note: Optional[str] = None
 
 
 # ----------------------------
@@ -122,11 +128,7 @@ def _format_notes_block(notes: List[models.RequestNote]) -> str:
     return "\n".join(lines)
 
 
-def _send_assignment_email(
-    db: Session,
-    req: models.Request,
-    assignee: models.Member,
-) -> None:
+def _send_assignment_email(db: Session, req: models.Request, assignee: models.Member) -> None:
     """
     Sends an email to the assignee with request details + all notes.
     Never raises (safe).
@@ -139,7 +141,6 @@ def _send_assignment_email(
     notes_block = _format_notes_block(notes)
 
     subject = f"London Lions – New Assignment: Request #{req.id} ({req.category})"
-
     body = (
         f"Hello {assignee.full_name or assignee.email},\n\n"
         f"You have been assigned a new request.\n\n"
@@ -156,13 +157,14 @@ def _send_assignment_email(
         f"Thank you,\nLondon Lions\n"
     )
 
-    send_email_if_configured(to_email, subject, body)
+    ok = send_email_if_configured(to_email, subject, body)
+    if not ok:
+        print("ASSIGNMENT EMAIL NOT SENT (disabled/missing config/SMTP failed).")
 
 
 # ----------------------------
 # Endpoints
 # ----------------------------
-
 @router.get("", response_model=List[RequestOut])
 def list_requests(
     status: Optional[str] = Query(None),
@@ -299,8 +301,8 @@ def assign_request(
     req.updated_at = datetime.utcnow()
 
     db.commit()
+    db.refresh(req)
 
-    # ✅ Send email ONLY when assignment changes to a real person
     if new_assignee_id and new_assignee_id != previous_assignee and assignee:
         try:
             _send_assignment_email(db, req, assignee)
@@ -319,11 +321,9 @@ def update_status(
 ):
     req = get_request_or_404(db, request_id)
 
-    # Track previous assignment for email logic
     previous_assignee = req.assigned_to_member_id
     new_assignee_id = body.assigned_to_member_id
 
-    # Validate assignee if provided (including explicit unassign via null)
     assignee: Optional[models.Member] = None
     if new_assignee_id is not None:
         assignee = db.get(models.Member, new_assignee_id)
@@ -332,22 +332,20 @@ def update_status(
         if not assignee.is_active:
             raise HTTPException(status_code=400, detail="Assigned member is inactive")
 
-    # Apply updates
     req.status = body.status
     req.closed_at = datetime.utcnow() if body.status == "CLOSED" else None
 
-    # Only touch assignment fields if assigned_to_member_id was included in payload
-    # (Pydantic will include it even if null; your UI sends null for Unassigned)
     req.assigned_to_member_id = new_assignee_id
     req.assigned_at = datetime.utcnow() if new_assignee_id else None
 
     req.updated_at = datetime.utcnow()
+
     db.commit()
+    db.refresh(req)
 
     email_sent = False
     email_error: Optional[str] = None
 
-    # ✅ Send email ONLY when assignment changes to a real person
     if new_assignee_id and new_assignee_id != previous_assignee and assignee:
         try:
             _send_assignment_email(db, req, assignee)
@@ -355,7 +353,57 @@ def update_status(
         except Exception as e:
             email_error = str(e)
 
-    # Return extra info (frontend can ignore, or display)
+    return {"ok": True, "email_sent": email_sent, "email_error": email_error}
+
+
+# ✅ NEW ENDPOINT: matches what your frontend is calling
+@router.patch("/{request_id}/assign-status")
+def assign_status(
+    request_id: int,
+    body: AssignStatusIn,
+    db: Session = Depends(get_db),
+    me: models.Member = Depends(auth.require_admin),
+):
+    req = get_request_or_404(db, request_id)
+
+    previous_assignee = req.assigned_to_member_id
+    new_assignee_id = body.assigned_to_member_id
+
+    assignee: Optional[models.Member] = None
+    if new_assignee_id is not None:
+        assignee = db.get(models.Member, new_assignee_id)
+        if not assignee:
+            raise HTTPException(status_code=400, detail="Assigned member not found")
+        if not assignee.is_active:
+            raise HTTPException(status_code=400, detail="Assigned member is inactive")
+
+    # update status
+    req.status = body.status
+    req.closed_at = datetime.utcnow() if body.status == "CLOSED" else None
+
+    # update assignment
+    req.assigned_to_member_id = new_assignee_id
+    req.assigned_at = datetime.utcnow() if new_assignee_id else None
+
+    # optional note field (does NOT affect approve/deny flow)
+    if body.decision_note is not None:
+        req.decision_note = body.decision_note
+
+    req.updated_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(req)
+
+    email_sent = False
+    email_error: Optional[str] = None
+
+    if new_assignee_id and new_assignee_id != previous_assignee and assignee:
+        try:
+            _send_assignment_email(db, req, assignee)
+            email_sent = True
+        except Exception as e:
+            email_error = str(e)
+
     return {"ok": True, "email_sent": email_sent, "email_error": email_error}
 
 
@@ -376,7 +424,6 @@ def decide_request(
 
     db.commit()
 
-    # Optional notify requester
     if req.requester_email:
         try:
             subject = f"London Lions – Your request #{req.id} is now {req.status}"

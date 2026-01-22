@@ -1,5 +1,4 @@
 # app/schemas.py
-
 from datetime import datetime, date
 from typing import Optional, Literal
 
@@ -11,10 +10,14 @@ RequestCategory = Literal["EYE_CARE", "COMMUNITY_ASSISTANCE"]
 # -----------------------------
 # AUTH
 # -----------------------------
-
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+    # ✅ SaaS extras (backwards-safe: optional)
+    club_id: Optional[int] = None
+    member_id: Optional[int] = None
+    is_admin: Optional[bool] = None
 
 
 class LoginIn(BaseModel):
@@ -25,7 +28,6 @@ class LoginIn(BaseModel):
 # -----------------------------
 # MEMBERS
 # -----------------------------
-
 class MemberOut(BaseModel):
     id: int
     email: EmailStr
@@ -66,14 +68,29 @@ class MemberCreateIn(BaseModel):
     is_admin: bool = False
 
 
-# ✅ Admin Tools PATCH payload (matches admin_tools.js)
 class AdminMemberUpdateIn(BaseModel):
+    """
+    ✅ Backwards-safe admin patch model.
+
+    Why these extras exist:
+    - Your UI (or older UI) may send `role` instead of `is_admin`
+    - Your backend route currently appears to REQUIRE `is_active` in the PATCH body
+      (based on the error you showed), so we accept it here safely.
+    """
     full_name: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
     member_since: Optional[date] = None
     birthday: Optional[date] = None
+
+    # current style
     is_admin: Optional[bool] = None
+
+    # older/alt style (doesn't break anything if unused)
+    role: Optional[str] = None  # e.g. "ADMIN", "OWNER", "MEMBER"
+
+    # ✅ critical: allow patch/update endpoints that mistakenly require is_active
+    is_active: Optional[bool] = None
 
 
 class AdminMemberActiveIn(BaseModel):
@@ -87,7 +104,6 @@ class AdminPasswordResetIn(BaseModel):
 # -----------------------------
 # REQUESTS (PUBLIC + MEMBER)
 # -----------------------------
-
 class PublicRequestCreate(BaseModel):
     category: RequestCategory
     requester_name: str
@@ -111,6 +127,9 @@ class RequestOut(BaseModel):
     reviewed_at: Optional[datetime] = None
     decision_note: Optional[str] = None
 
+    # ✅ optional convenience field (won’t break older responses)
+    reviewed_by_name: Optional[str] = None
+
     class Config:
         from_attributes = True
 
@@ -123,7 +142,6 @@ class RequestReviewIn(BaseModel):
 # -----------------------------
 # EVENTS
 # -----------------------------
-
 class EventCreateIn(BaseModel):
     title: str
     description: Optional[str] = None
@@ -160,10 +178,11 @@ class EventOut(BaseModel):
 # -----------------------------
 # SERVICE HOURS
 # -----------------------------
-
 class ServiceHourCreateIn(BaseModel):
     service_date: date = Field(default_factory=date.today)
     hours: float = Field(gt=0)
+
+    # Existing field names (keep)
     activity: str
     notes: Optional[str] = None
 
@@ -171,18 +190,36 @@ class ServiceHourCreateIn(BaseModel):
 class ServiceHourUpdateIn(BaseModel):
     service_date: Optional[date] = None
     hours: Optional[float] = Field(default=None, gt=0)
+
+    # Existing field names (keep)
     activity: Optional[str] = None
     notes: Optional[str] = None
 
 
 class ServiceHourOut(BaseModel):
+    """
+    ✅ Backwards-safe output model.
+
+    Keeps original fields exactly, and ADDS optional display-friendly fields
+    so your UI can show a member name instead of email when the backend provides it.
+    """
     id: int
     member_id: int
     service_date: date
     hours: float
+
+    # Existing names (keep)
     activity: str
     notes: Optional[str] = None
+
     created_at: datetime
+
+    # ✅ Optional extras for UI display (won’t break anything if not returned yet)
+    member_name: Optional[str] = None
+    member_email: Optional[EmailStr] = None
+    service_location: Optional[str] = None
+    service_type: Optional[str] = None
+    club_ytd_hours: Optional[float] = None
 
     class Config:
         from_attributes = True

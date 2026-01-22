@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin Tools</title>
+  <style>
+    body{margin:0;font-family:Arial,sans-serif;background:radial-gradient(circle at top,#0f1b34,#060b18);color:#e8eefc}
+    .page{min-height:100vh;display:flex;justify-content:center;padding:20px}
+    .container{width:100%;max-width:900px}
+    .card{background:#0b1328;border:1px solid #233255;border-radius:22px;padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.45)}
+    h1{margin:0 0 8px;font-size:28px;font-weight:900}
+    .sub{color:#b9c7ef;font-weight:700;margin:0 0 18px}
+    .row{display:flex;gap:14px;flex-wrap:wrap}
+    .col{flex:1 1 320px;min-width:280px}
+    label{display:block;margin:12px 0 8px;font-weight:800;color:#cfe0ff}
+    input,select{width:100%;padding:12px;border-radius:14px;border:1px solid #243458;background:rgba(7,12,28,.75);color:#e8eefc;outline:none;font-size:15px;box-sizing:border-box}
+    button{padding:12px 14px;border-radius:14px;border:none;background:#3a73ff;color:#fff;font-weight:900;cursor:pointer}
+    button.secondary{background:transparent;border:1px solid #233255;color:#cfe0ff}
+    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+    .msg{margin-top:14px;font-weight:800;color:#ffb4b4;display:none}
+    .msg.ok{color:#b9ffcf}
+    table{width:100%;border-collapse:collapse;margin-top:10px}
+    th,td{padding:10px;border-bottom:1px solid rgba(35,50,85,.55);text-align:left}
+    th{color:#cfe0ff}
+    .pill{display:inline-block;padding:6px 10px;border-radius:999px;font-weight:900;font-size:12px;border:1px solid rgba(58,115,255,.35);background:rgba(58,115,255,.14)}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="container">
+      <div class="card">
+        <h1>Admin Tools</h1>
+        <p class="sub">Club settings, email status, and member management.</p>
+
+        <div id="statusMsg" class="msg"></div>
+
+        <div class="row">
+          <div class="col">
+            <h3 style="margin:0 0 8px;">Club</h3>
+            <div><span class="pill" id="clubPill">Loading…</span></div>
+            <div style="margin-top:10px;color:#b9c7ef;font-weight:800;">
+              Email Status: <span id="emailStatus">Loading…</span>
+            </div>
+
+            <div class="actions" style="margin-top:14px;">
+              <button id="goDashboard" class="secondary">Back to Dashboard</button>
+              <button id="logoutBtn" class="secondary">Logout</button>
+            </div>
+          </div>
+
+          <div class="col">
+            <h3 style="margin:0 0 8px;">Invite Member</h3>
+
+            <label for="inviteName">Name</label>
+            <input id="inviteName" type="text" placeholder="Jane Member" />
+
+            <label for="inviteEmail">Email</label>
+            <input id="inviteEmail" type="email" placeholder="jane@example.com" />
+
+            <label for="inviteAdmin">Role</label>
+            <select id="inviteAdmin">
+              <option value="false">Member</option>
+              <option value="true">Admin</option>
+            </select>
+
+            <div class="actions">
+              <button id="inviteBtn">Send Invite</button>
+            </div>
+          </div>
+        </div>
+
+        <hr style="margin:18px 0;border:none;border-top:1px solid rgba(35,50,85,.6);" />
+
+        <h3 style="margin:0 0 8px;">Members</h3>
+        <div id="membersWrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/js/admin.js"></script>
+</body>
+</html>

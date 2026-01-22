@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>London Lions App – Member Login</title>
+  <title id="pageTitle">Lions App – Member Login</title>
 
   <style>
     body {
@@ -72,6 +72,7 @@
       color: #e8eefc;
       outline: none;
       font-size: 15px;
+      box-sizing: border-box;
     }
     button {
       margin-top: 18px;
@@ -102,6 +103,43 @@
       font-size: 13px;
     }
     .backlink:hover { text-decoration: underline; }
+
+    /* helper row */
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .row input { flex: 1; }
+    .smallBtn {
+      width: auto;
+      margin-top: 0;
+      padding: 14px 14px;
+      border-radius: 14px;
+      font-size: 14px;
+      background: #233255;
+    }
+
+    .status {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #b9c7ef;
+      text-align: center;
+      min-height: 18px;
+    }
+    .status.error { color: #ffb4b4; }
+    .status.ok { color: #b7ffbf; }
+
+    /* ✅ NEW: login.js status message area (matches public pages style) */
+    .msg{
+      margin-top: 14px;
+      font-weight: 800;
+      color: #ffb4b4;
+      display: none;
+      text-align: center;
+      min-height: 18px;
+    }
+    .msg.ok{ color: #b7ffbf; }
   </style>
 </head>
 
@@ -109,31 +147,147 @@
   <div class="page">
     <div class="container">
       <div class="brand">
-        <img src="/static/images/lions_emblem.png" alt="Lions Club Logo">
-        <h1>London Lions App</h1>
-        <h2>Lions Club of London Ohio</h2>
+        <!-- ✅ IDs used for dynamic branding -->
+        <img id="clubLogo" src="/static/images/lions_emblem.png" alt="Lions Club Logo">
+        <h1 id="clubAppName">Lions App</h1>
+        <h2 id="clubSubName">Member Login</h2>
       </div>
 
       <div class="card">
         <h3>Member Sign in</h3>
 
-        <label for="email">Email</label>
-        <input id="email" type="email" placeholder="admin@example.com" autocomplete="username">
+        <!-- ✅ IMPORTANT FIX:
+             Wrap inputs in a FORM with id="loginForm"
+             so login.js can bind to submit and the button works. -->
+        <form id="loginForm">
+          <!-- ✅ Club Code (Option A) -->
+          <label for="clubSlug">Club Code</label>
+          <div class="row">
+            <input id="clubSlug" type="text" placeholder="e.g. normanville" autocomplete="off">
+            <button id="loadClubBtn" class="smallBtn" type="button">Load</button>
+          </div>
+          <div id="clubStatus" class="status"></div>
 
-        <label for="password">Password</label>
-        <input id="password" type="password" placeholder="••••••••••" autocomplete="current-password">
+          <label for="email">Email</label>
+          <input id="email" type="email" placeholder="admin@example.com" autocomplete="username">
 
-        <button id="loginBtn" type="button">Login</button>
+          <label for="password">Password</label>
+          <input id="password" type="password" placeholder="••••••••••" autocomplete="current-password">
 
-        <div class="note">
-          Login route: <strong>/member/login</strong>
-        </div>
+          <!-- ✅ submit (not type="button") so form submit fires -->
+          <button id="loginBtn" type="submit">Login</button>
 
-        <a class="backlink" href="/static/public_request.html">← Back to Public Request Form</a>
+          <!-- ✅ login.js expects a status element like this -->
+          <div id="statusMsg" class="msg"></div>
+
+          <div class="note">
+            Login route: <strong>/member/login</strong>
+          </div>
+
+          <!-- ✅ Club-preserving backlink (JS will set href) -->
+          <a class="backlink" id="publicBackLink" href="/static/public_request.html">← Back to Public Request Form</a>
+        </form>
       </div>
     </div>
   </div>
 
+  <!-- Your existing login behavior -->
   <script type="module" src="/static/js/login.js"></script>
+
+  <!-- ✅ Option A: club code + branding helper -->
+  <script type="module">
+    const $ = (id) => document.getElementById(id);
+
+    function getQueryParam(name) {
+      const url = new URL(window.location.href);
+      return url.searchParams.get(name);
+    }
+    function setQueryParam(name, value) {
+      const url = new URL(window.location.href);
+      if (!value) url.searchParams.delete(name);
+      else url.searchParams.set(name, value);
+      window.history.replaceState({}, "", url.toString());
+    }
+
+    function setClubStatus(msg, ok=false) {
+      const el = $("clubStatus");
+      if (!el) return;
+      el.textContent = msg || "";
+      el.className = "status" + (msg ? (ok ? " ok" : " error") : "");
+    }
+
+    function withClub(url) {
+      const slug = (localStorage.getItem("club_slug") || "").trim();
+      if (!slug) return url;
+      const u = new URL(url, window.location.origin);
+      u.searchParams.set("club", slug);
+      return u.pathname + u.search;
+    }
+
+    async function fetchClub(slug) {
+      const s = (slug || "").trim();
+      if (!s) throw new Error("Enter a Club Code.");
+      const res = await fetch(`/public/club/${encodeURIComponent(s)}`, {
+        headers: { "Accept": "application/json" }
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.detail || "Club not found.");
+      return data.club;
+    }
+
+    function applyBranding(club) {
+      const name = club?.name || "Lions App";
+      const slug = club?.slug || "";
+
+      if ($("clubAppName")) $("clubAppName").textContent = name;
+      if ($("clubSubName")) $("clubSubName").textContent = "Member Login";
+      document.title = `${name} – Member Login`;
+
+      // Store slug for login.js to use later
+      localStorage.setItem("club_slug", slug);
+
+      // keep the URL nice
+      setQueryParam("club", slug);
+
+      // preserve club on backlink
+      const back = $("publicBackLink");
+      if (back) back.href = withClub("/static/public_request.html");
+    }
+
+    async function loadClubFromInput() {
+      try {
+        setClubStatus("");
+        const slug = $("clubSlug")?.value || "";
+        const club = await fetchClub(slug);
+        applyBranding(club);
+        setClubStatus(`Loaded: ${club.name}`, true);
+      } catch (e) {
+        setClubStatus(e.message || "Could not load club.", false);
+      }
+    }
+
+    async function loadClubFromUrlOrStorage() {
+      const urlSlug = (getQueryParam("club") || "").trim();
+      const saved = (localStorage.getItem("club_slug") || "").trim();
+      const slug = urlSlug || saved;
+
+      if (!slug) return;
+
+      if ($("clubSlug")) $("clubSlug").value = slug;
+
+      try {
+        const club = await fetchClub(slug);
+        applyBranding(club);
+        setClubStatus(`Loaded: ${club.name}`, true);
+      } catch (e) {
+        setClubStatus(e.message || "Could not load club.", false);
+      }
+    }
+
+    $("loadClubBtn")?.addEventListener("click", loadClubFromInput);
+
+    // Auto-load if URL has ?club= or localStorage has club_slug
+    loadClubFromUrlOrStorage();
+  </script>
 </body>
 </html>

@@ -1,58 +1,82 @@
 // app/static/js/auth.js
+// Shared auth helpers for ALL pages.
+//
+// This version is backwards-compatible:
+// - reads token from access_token OR token (and a couple legacy keys)
+// - always attaches Authorization: Bearer <token> in apiFetch()
+// - clears tokens on 401
 
-const TOKEN_KEY = "access_token";
+const PRIMARY_KEY = "access_token";
+const FALLBACK_KEYS = ["token", "jwt", "auth_token"];
 
-export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
+function getToken() {
+  // Primary key first
+  let t = localStorage.getItem(PRIMARY_KEY) || sessionStorage.getItem(PRIMARY_KEY);
+  if (t) return t;
+
+  // Fallback keys
+  for (const k of FALLBACK_KEYS) {
+    t = localStorage.getItem(k) || sessionStorage.getItem(k);
+    if (t) return t;
+  }
+  return null;
 }
 
 export function setToken(token) {
-  localStorage.setItem(TOKEN_KEY, token);
+  const t = String(token || "").trim();
+  if (!t) return;
+
+  // Store to primary + keep "token" for old code
+  localStorage.setItem(PRIMARY_KEY, t);
+  localStorage.setItem("token", t);
+  sessionStorage.setItem(PRIMARY_KEY, t);
+  sessionStorage.setItem("token", t);
 }
 
 export function clearToken() {
-  localStorage.removeItem(TOKEN_KEY);
-}
+  localStorage.removeItem(PRIMARY_KEY);
+  sessionStorage.removeItem(PRIMARY_KEY);
 
-// Redirects to login if missing token
-export function requireAuth(redirectTo = "/static/index.html") {
-  const token = getToken();
-  if (!token) {
-    window.location.href = redirectTo;
-    return null;
+  for (const k of FALLBACK_KEYS) {
+    localStorage.removeItem(k);
+    sessionStorage.removeItem(k);
   }
-  return token;
+
+  // also remove plain "token" (some code uses it directly)
+  localStorage.removeItem("token");
+  sessionStorage.removeItem("token");
 }
 
-/**
- * Wrapper for fetch that automatically adds Authorization header.
- *
- * Rules:
- * - 401: Not authenticated (missing/expired/invalid token) => clear token + redirect to login
- * - 403: Authenticated but forbidden => DO NOT clear token (caller decides what to do)
- */
+export function requireAuth() {
+  const t = getToken();
+  if (!t) {
+    window.location.href = "/static/index.html";
+    return false;
+  }
+  return true;
+}
+
 export async function apiFetch(url, options = {}) {
   const token = getToken();
-  if (!token) {
-    window.location.href = "/static/index.html";
-    throw new Error("Not logged in");
-  }
 
   const headers = new Headers(options.headers || {});
-  headers.set("Authorization", `Bearer ${token}`);
+  headers.set("Accept", "application/json");
 
-  if (!headers.has("Content-Type") && options.body && !(options.body instanceof FormData)) {
+  // Set JSON content-type automatically when sending a body (unless already set)
+  if (options.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
+  }
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
   }
 
   const resp = await fetch(url, { ...options, headers });
 
+  // If token is invalid/expired, clear it so UI can redirect cleanly
   if (resp.status === 401) {
     clearToken();
-    window.location.href = "/static/index.html";
-    throw new Error("Session expired");
   }
 
-  // IMPORTANT: do NOT clear token on 403
   return resp;
 }
