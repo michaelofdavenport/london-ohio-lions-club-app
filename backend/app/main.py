@@ -38,6 +38,7 @@ from app.routers import member
 import app.routers.public_club as public_club
 from app.routers import admin_club
 from app.routers import admin_ping
+from app.bootstrap import router as bootstrap_router
 
 # ✅ Phase 3 modular routers (moved out of main.py)
 from app.routers import admin_members
@@ -194,6 +195,7 @@ app.include_router(public_club.router)
 app.include_router(admin_club.router)
 app.include_router(member.router)
 app.include_router(admin_ping.router)
+app.include_router(bootstrap_router)
 
 # ✅ Phase 3 modular routers
 app.include_router(admin_members.router)
