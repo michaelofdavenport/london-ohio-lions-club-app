@@ -5,18 +5,20 @@ import os
 import secrets
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import text
+from fastapi import APIRouter, HTTPException, Query, Depends
+from sqlalchemy import text, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app import auth
+from app import models, auth
 
 router = APIRouter()
+
 
 def _env(name: str) -> Optional[str]:
     v = os.getenv(name)
     return v.strip() if v else None
+
 
 def _require_env(name: str) -> str:
     v = _env(name)
@@ -31,21 +33,21 @@ def bootstrap_first_owner(
     db: Session = Depends(get_db),
 ):
     """
-    One-time bootstrap for a brand-new Postgres DB:
-      - Creates a club (by slug) if it doesn't exist
-      - Creates/updates an OWNER member for that club
-      - Writes a DB flag so it cannot be run again
-    Security:
+    One-time bootstrap (for brand new clubs / brand new databases):
       - Requires BOOTSTRAP_KEY match
-      - You should REMOVE BOOTSTRAP_* env vars after success
+      - Creates the club (slug) if missing
+      - Creates the OWNER member if missing
+      - Writes a DB flag so it cannot be run again
+    After success:
+      - REMOVE BOOTSTRAP_* env vars in Render
     """
 
-    # 0) Check bootstrap key
+    # 0) Verify key matches BOOTSTRAP_KEY
     bootstrap_key = _require_env("BOOTSTRAP_KEY")
     if not secrets.compare_digest(key, bootstrap_key):
         raise HTTPException(status_code=401, detail="Invalid bootstrap key")
 
-    # 1) Hard-disable after first run via DB flag
+    # 1) Ensure the system_flags table exists (safe every run)
     db.execute(
         text(
             """
@@ -53,104 +55,71 @@ def bootstrap_first_owner(
                 key TEXT PRIMARY KEY,
                 value TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
+            )
             """
         )
     )
+
+    # 2) Hard-disable after first successful run
     used = db.execute(text("SELECT value FROM system_flags WHERE key='bootstrap_used'")).first()
     if used and used[0] == "1":
         raise HTTPException(status_code=403, detail="Bootstrap already used")
 
-    # 2) Read required env vars
-    club_slug = _require_env("BOOTSTRAP_CLUB_CODE").strip().lower()  # we store this into clubs.slug
-    club_name = _env("BOOTSTRAP_CLUB_NAME") or club_slug
+    # 3) Read env vars (BOOTSTRAP_CLUB_CODE is treated as the club SLUG)
+    club_slug = _require_env("BOOTSTRAP_CLUB_CODE").strip()
+    club_name = (_env("BOOTSTRAP_CLUB_NAME") or club_slug).strip()
     owner_email = _require_env("BOOTSTRAP_EMAIL").strip().lower()
     owner_password = _require_env("BOOTSTRAP_PASSWORD")
 
-    # 3) Ensure club exists (your app uses clubs.slug, not clubs.code)
-    club_row = db.execute(
-        text("SELECT id FROM clubs WHERE slug = :slug"),
-        {"slug": club_slug},
-    ).first()
+    # 4) Ensure club exists (your app uses clubs.slug)
+    club = db.scalar(select(models.Club).where(models.Club.slug == club_slug))
+    if not club:
+        club = models.Club(
+            slug=club_slug,
+            name=club_name,
+            logo_url="/static/images/lions_emblem.png",
+            is_active=True,
+        )
+        db.add(club)
+        db.commit()
+        db.refresh(club)
 
-    if club_row:
-        club_id = int(club_row[0])
-        # Keep name fresh if provided
-        db.execute(
-            text("UPDATE clubs SET name = :name WHERE id = :id"),
-            {"name": club_name, "id": club_id},
+    # 5) Ensure OWNER member exists (club-scoped)
+    member = db.scalar(
+        select(models.Member).where(
+            models.Member.club_id == club.id,
+            models.Member.email == owner_email,
         )
-    else:
-        # Insert with the columns your app already uses in main.py
-        db.execute(
-            text(
-                """
-                INSERT INTO clubs (slug, name, logo_url, is_active)
-                VALUES (:slug, :name, :logo_url, TRUE)
-                """
-            ),
-            {
-                "slug": club_slug,
-                "name": club_name,
-                "logo_url": "/static/images/lions_emblem.png",
-            },
-        )
-        club_id = int(
-            db.execute(
-                text("SELECT id FROM clubs WHERE slug = :slug"),
-                {"slug": club_slug},
-            ).first()[0]
-        )
-
-    # 4) Ensure OWNER member exists for that club
-    member_row = db.execute(
-        text("SELECT id FROM members WHERE club_id = :club_id AND lower(email) = :email"),
-        {"club_id": club_id, "email": owner_email},
-    ).first()
+    )
 
     hashed = auth.hash_password(owner_password)
 
-    if member_row:
-        owner_id = int(member_row[0])
-        db.execute(
-            text(
-                """
-                UPDATE members
-                SET hashed_password = :hp,
-                    role = 'OWNER',
-                    is_active = TRUE,
-                    is_admin = TRUE,
-                    is_super_admin = TRUE
-                WHERE id = :id
-                """
-            ),
-            {"hp": hashed, "id": owner_id},
-        )
-        created = False
+    if member:
+        # Update password + elevate role to OWNER
+        member.hashed_password = hashed
+        member.is_active = True
+        member.is_admin = True
+        member.role = "OWNER"
+        # Do NOT set is_super_admin here (that’s platform-level)
+        db.commit()
+        owner_created = False
     else:
-        db.execute(
-            text(
-                """
-                INSERT INTO members (club_id, email, hashed_password, role, is_active, is_admin, is_super_admin, full_name)
-                VALUES (:club_id, :email, :hp, 'OWNER', TRUE, TRUE, TRUE, :full_name)
-                """
-            ),
-            {
-                "club_id": club_id,
-                "email": owner_email,
-                "hp": hashed,
-                "full_name": "Owner",
-            },
+        member = models.Member(
+            email=owner_email,
+            hashed_password=hashed,
+            full_name="Club Owner",
+            is_admin=True,
+            is_active=True,
+            club_id=club.id,
+            role="OWNER",
+            is_super_admin=False,
         )
-        owner_id = int(
-            db.execute(
-                text("SELECT id FROM members WHERE club_id = :club_id AND lower(email)=:email"),
-                {"club_id": club_id, "email": owner_email},
-            ).first()[0]
-        )
-        created = True
+        db.add(member)
+        db.commit()
+        db.refresh(member)
+        owner_created = True
 
-    # 5) Mark bootstrap as used (permanent lock)
+    # 6) Mark bootstrap used (permanent lock)
     db.execute(
         text(
             """
@@ -160,15 +129,14 @@ def bootstrap_first_owner(
             """
         )
     )
-
     db.commit()
 
     return {
         "ok": True,
-        "club_slug": club_slug,
-        "club_id": club_id,
+        "club_slug": club.slug,
+        "club_id": int(club.id),
         "owner_email": owner_email,
-        "owner_id": owner_id,
-        "owner_created": created,
+        "owner_id": int(member.id),
+        "owner_created": bool(owner_created),
         "next_step": "REMOVE BOOTSTRAP_* env vars in Render, then redeploy.",
     }
