@@ -1,4 +1,4 @@
-# app/main.py
+# backend/app/main.py
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -19,7 +19,9 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.database import Base, engine, get_db
 from app import models, schemas, auth
 from app.emailer import send_email_if_configured
-from app.authz_errors import http_exception_handler
+
+# ✅ IMPORTANT: preserve real HTTP codes + catch true 500s
+from app.authz_errors import http_exception_handler, unhandled_exception_handler
 
 # ✅ Phase 3A: standardized email templates
 from app.email_templates import request_received, admin_new_request
@@ -146,8 +148,11 @@ Base.metadata.create_all(bind=engine)
 # -------------------------------------------------
 app = FastAPI(title="London Lions Backend", version="0.3.0")
 
-# ✅ Register handler early (matches your current file)
+# ✅ Preserve real HTTP errors (401/403/404/etc)
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+
+# ✅ Only true “unexpected errors” become 500 in a controlled way
+app.add_exception_handler(Exception, unhandled_exception_handler)
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
