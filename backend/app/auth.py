@@ -1,10 +1,10 @@
-# app/auth.py
+# backend/app/auth.py
 import os
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -39,7 +39,7 @@ pwd_context = CryptContext(
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/member/login")
 
 # -------------------------------------------------------------------
-# Roles (Issue #2)
+# Roles
 # -------------------------------------------------------------------
 ROLE_OWNER = "OWNER"
 ROLE_ADMIN = "ADMIN"
@@ -137,7 +137,7 @@ def create_access_token(
       cid: club id
       adm: admin flag (legacy / compatibility)
       sad: super-admin flag
-      rol: role (OWNER/ADMIN/MEMBER)   <-- Issue #2
+      rol: role (OWNER/ADMIN/MEMBER)
       exp: expiry datetime
     """
     expire = datetime.utcnow() + timedelta(minutes=expires_minutes or ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -146,8 +146,8 @@ def create_access_token(
         "mid": int(member_id),          # member id
         "cid": int(club_id),            # club id
         "adm": bool(is_admin),          # legacy admin flag (do not remove)
-        "sad": bool(is_super_admin),    # super-admin flag (Issue #1)
-        "rol": normalize_role(role),    # hard role (Issue #2)
+        "sad": bool(is_super_admin),    # super-admin flag
+        "rol": normalize_role(role),    # hard role
         "exp": expire,
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
@@ -164,27 +164,9 @@ def decode_token(token: str) -> dict:
 
 
 # -------------------------------------------------------------------
-# Dependencies
+# Internal helpers (used by BOTH dependency + middleware)
 # -------------------------------------------------------------------
-def get_current_member(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-) -> Member:
-    """
-    Validates Bearer token and loads the Member by (member_id, club_id).
-    This is the core SaaS isolation rule.
-    """
-    try:
-        payload = decode_token(token)
-        member_id = int(payload["mid"])
-        club_id = int(payload["cid"])
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
+def _load_member_from_claims(db: Session, member_id: int, club_id: int) -> Member:
     member = (
         db.query(Member)
         .filter(Member.id == member_id, Member.club_id == club_id)
@@ -213,6 +195,65 @@ def get_current_member(
     return member
 
 
+def _auth_401() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Not authenticated",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+# -------------------------------------------------------------------
+# Dependencies
+# -------------------------------------------------------------------
+def get_current_member(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> Member:
+    """
+    Validates Bearer token and loads the Member by (member_id, club_id).
+    This is the core SaaS isolation rule.
+    """
+    try:
+        payload = decode_token(token)
+        member_id = int(payload["mid"])
+        club_id = int(payload["cid"])
+    except Exception:
+        raise _auth_401()
+
+    return _load_member_from_claims(db, member_id, club_id)
+
+
+def get_current_member_from_request(request: Request, db: Session) -> Member:
+    """
+    Middleware-safe auth:
+      - Reads Authorization header
+      - Validates Bearer token
+      - Loads member by (mid, cid)
+    """
+    auth_header = (request.headers.get("Authorization") or "").strip()
+    if not auth_header:
+        raise _auth_401()
+
+    # Expect: "Bearer <token>"
+    parts = auth_header.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise _auth_401()
+
+    token = parts[1].strip()
+    if not token:
+        raise _auth_401()
+
+    try:
+        payload = decode_token(token)
+        member_id = int(payload["mid"])
+        club_id = int(payload["cid"])
+    except Exception:
+        raise _auth_401()
+
+    return _load_member_from_claims(db, member_id, club_id)
+
+
 def require_admin(member: Member = Depends(get_current_member)) -> Member:
     """
     Backward compatible:
@@ -234,11 +275,6 @@ def require_admin(member: Member = Depends(get_current_member)) -> Member:
 def require_owner(member: Member = Depends(get_current_member)) -> Member:
     """
     Hard OWNER gate.
-    Use this for actions like:
-      - changing club settings
-      - promoting/demoting admins
-      - transferring ownership
-      - deleting the club, etc.
     """
     if not is_owner(member):
         raise HTTPException(status_code=403, detail="Owner privileges required")
