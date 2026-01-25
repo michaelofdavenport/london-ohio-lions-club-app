@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 import secrets
-import traceback
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,71 +20,28 @@ def _env(name: str) -> Optional[str]:
 
 
 def _bootstrap_enabled() -> bool:
-    # If BOOTSTRAP_KEY is missing, behave like the endpoint does not exist.
+    """
+    If BOOTSTRAP_KEY is missing, bootstrap is treated as disabled.
+    In production, we want the endpoint to behave like it does not exist.
+    """
     return bool(_env("BOOTSTRAP_KEY"))
 
 
 def _require_env(name: str) -> str:
     v = _env(name)
     if not v:
-        # Do NOT return 500 (looks like a bug). Pretend route doesn't exist.
+        # Pretend route doesn't exist if not configured
         raise HTTPException(status_code=404, detail="Not Found")
     return v
 
 
-def _ensure_table_and_columns(db: Session) -> None:
-    """
-    Make bootstrap resilient on a fresh DB:
-      - system_flags table
-      - clubs table with (id, slug, name)
-      - members table with (id, club_id, email, hashed_password, role, is_active)
-    If your real schema has *more* columns, this won't hurt it.
-    If your schema uses different names, the error message will tell us exactly what to change.
-    """
-
-    # system_flags
-    db.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS system_flags (
-                key TEXT PRIMARY KEY,
-                value TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-    )
-
-    # clubs (minimal required for bootstrap)
-    db.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS clubs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                slug TEXT UNIQUE NOT NULL,
-                name TEXT NOT NULL
-            )
-            """
-        )
-    )
-
-    # members (minimal required for bootstrap)
-    db.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS members (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                club_id INTEGER NOT NULL,
-                email TEXT NOT NULL,
-                hashed_password TEXT NOT NULL,
-                role TEXT NOT NULL DEFAULT 'MEMBER',
-                is_active INTEGER NOT NULL DEFAULT 1
-            )
-            """
-        )
-    )
-
-    db.commit()
+def _column_exists(db: Session, table: str, column: str) -> bool:
+    try:
+        cols = db.execute(text(f"PRAGMA table_info({table})")).fetchall()
+        existing = {c[1] for c in cols}  # c[1] is column name
+        return column in existing
+    except Exception:
+        return False
 
 
 @router.post("/admin/bootstrap")
@@ -97,7 +53,7 @@ def bootstrap_first_owner(
     One-time bootstrap:
       - Creates a club (by slug) if it doesn't exist
       - Creates an OWNER member if it doesn't exist (or upgrades existing)
-      - Locks itself after first success via system_flags
+      - Locks itself permanently after first success via system_flags
 
     Security:
       - If BOOTSTRAP_KEY missing => 404 (acts like endpoint doesn't exist)
@@ -106,7 +62,6 @@ def bootstrap_first_owner(
       - After success: remove BOOTSTRAP_* env vars in Render and redeploy
     """
 
-    # If env is removed, do not expose anything.
     if not _bootstrap_enabled():
         raise HTTPException(status_code=404, detail="Not Found")
 
@@ -114,29 +69,40 @@ def bootstrap_first_owner(
     if not secrets.compare_digest(key, bootstrap_key):
         raise HTTPException(status_code=401, detail="Invalid bootstrap key")
 
+    # Create flags table + check used
+    db.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS system_flags (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+    )
+    used = db.execute(text("SELECT value FROM system_flags WHERE key='bootstrap_used'")).first()
+    if used and str(used[0]) == "1":
+        raise HTTPException(status_code=403, detail="Bootstrap already used")
+
+    # Required env vars
+    club_slug = _require_env("BOOTSTRAP_CLUB_SLUG")
+    club_name = _env("BOOTSTRAP_CLUB_NAME") or club_slug
+
+    owner_email = _require_env("BOOTSTRAP_EMAIL").strip().lower()
+    owner_password = _require_env("BOOTSTRAP_PASSWORD")
+
+    # Hash password
+    from passlib.context import CryptContext
+
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    hashed = pwd_context.hash(owner_password)
+
+    # Does members table have is_super_admin?
+    has_is_super_admin = _column_exists(db, "members", "is_super_admin")
+
     try:
-        # Ensure required tables exist (fresh DB-safe)
-        _ensure_table_and_columns(db)
-
-        # Hard-disable after first run via DB flag
-        used = db.execute(text("SELECT value FROM system_flags WHERE key='bootstrap_used'")).first()
-        if used and str(used[0]) == "1":
-            raise HTTPException(status_code=403, detail="Bootstrap already used")
-
-        # IMPORTANT: use SLUG (matches your URLs: london-ohio)
-        club_slug = _require_env("BOOTSTRAP_CLUB_SLUG")
-        club_name = _env("BOOTSTRAP_CLUB_NAME") or club_slug
-
-        owner_email = _require_env("BOOTSTRAP_EMAIL").strip().lower()
-        owner_password = _require_env("BOOTSTRAP_PASSWORD")
-
-        # Password hashing
-        from passlib.context import CryptContext
-
-        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-        hashed = pwd_context.hash(owner_password)
-
-        # 1) Ensure club exists (by slug)
+        # 1) Ensure club exists
         club_row = db.execute(
             text("SELECT id FROM clubs WHERE slug = :slug"),
             {"slug": club_slug},
@@ -156,7 +122,7 @@ def bootstrap_first_owner(
                 ).first()[0]
             )
 
-        # 2) Ensure owner member exists (by club_id + email)
+        # 2) Ensure owner exists (by club_id + email)
         member_row = db.execute(
             text(
                 """
@@ -170,29 +136,63 @@ def bootstrap_first_owner(
 
         if member_row:
             owner_id = int(member_row[0])
-            db.execute(
-                text(
-                    """
-                    UPDATE members
-                    SET hashed_password = :hp,
-                        role = 'OWNER',
-                        is_active = 1
-                    WHERE id = :id
-                    """
-                ),
-                {"hp": hashed, "id": owner_id},
-            )
+
+            # Update: set role OWNER, active, and admin flag (NOT NULL in your schema)
+            if has_is_super_admin:
+                db.execute(
+                    text(
+                        """
+                        UPDATE members
+                        SET hashed_password = :hp,
+                            role = 'OWNER',
+                            is_active = 1,
+                            is_admin = 1,
+                            is_super_admin = COALESCE(is_super_admin, 0)
+                        WHERE id = :id
+                        """
+                    ),
+                    {"hp": hashed, "id": owner_id},
+                )
+            else:
+                db.execute(
+                    text(
+                        """
+                        UPDATE members
+                        SET hashed_password = :hp,
+                            role = 'OWNER',
+                            is_active = 1,
+                            is_admin = 1
+                        WHERE id = :id
+                        """
+                    ),
+                    {"hp": hashed, "id": owner_id},
+                )
+
             created = False
+
         else:
-            db.execute(
-                text(
-                    """
-                    INSERT INTO members (club_id, email, hashed_password, role, is_active)
-                    VALUES (:club_id, :email, :hp, 'OWNER', 1)
-                    """
-                ),
-                {"club_id": club_id, "email": owner_email, "hp": hashed},
-            )
+            # Insert: include is_admin to satisfy NOT NULL constraint
+            if has_is_super_admin:
+                db.execute(
+                    text(
+                        """
+                        INSERT INTO members (club_id, email, hashed_password, role, is_active, is_admin, is_super_admin)
+                        VALUES (:club_id, :email, :hp, 'OWNER', 1, 1, 0)
+                        """
+                    ),
+                    {"club_id": club_id, "email": owner_email, "hp": hashed},
+                )
+            else:
+                db.execute(
+                    text(
+                        """
+                        INSERT INTO members (club_id, email, hashed_password, role, is_active, is_admin)
+                        VALUES (:club_id, :email, :hp, 'OWNER', 1, 1)
+                        """
+                    ),
+                    {"club_id": club_id, "email": owner_email, "hp": hashed},
+                )
+
             owner_id = int(
                 db.execute(
                     text(
@@ -207,37 +207,29 @@ def bootstrap_first_owner(
             )
             created = True
 
-        # 3) Mark bootstrap as used (permanent lock)
+        # 3) Mark bootstrap as used
         db.execute(
             text(
                 """
                 INSERT INTO system_flags (key, value)
                 VALUES ('bootstrap_used', '1')
-                ON CONFLICT(key) DO UPDATE SET value='1'
+                ON CONFLICT (key) DO UPDATE SET value='1'
                 """
             )
         )
 
         db.commit()
 
-        return {
-            "ok": True,
-            "club_slug": club_slug,
-            "club_id": club_id,
-            "owner_email": owner_email,
-            "owner_id": owner_id,
-            "owner_created": created,
-            "next_step": "REMOVE BOOTSTRAP_* env vars in Render, then redeploy.",
-        }
-
-    except HTTPException:
-        # Let FastAPI return it cleanly
-        raise
-
     except Exception as e:
         db.rollback()
-        # Print full traceback to Render logs (so we can see the real failure)
-        print("🔥 BOOTSTRAP FAILED")
-        print(traceback.format_exc())
-        # Return a useful error to the caller (temporarily)
         raise HTTPException(status_code=500, detail=f"Bootstrap error: {e}")
+
+    return {
+        "ok": True,
+        "club_slug": club_slug,
+        "club_id": club_id,
+        "owner_email": owner_email,
+        "owner_id": owner_id,
+        "owner_created": created,
+        "next_step": "REMOVE BOOTSTRAP_* env vars in Render, then redeploy.",
+    }
