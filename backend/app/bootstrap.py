@@ -1,3 +1,4 @@
+from __future__ import annotations
 # backend/app/bootstrap.py
 print("🔥 BOOTSTRAP ROUTER LOADED")
 from __future__ import annotations
