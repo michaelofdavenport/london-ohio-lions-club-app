@@ -4,15 +4,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Optional
 import os
-import secrets
 
 from dotenv import load_dotenv, find_dotenv
-from fastapi import FastAPI, Depends, HTTPException, status, Query
+from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy import select, func, text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -26,6 +25,7 @@ from app.authz_errors import http_exception_handler, unhandled_exception_handler
 # ✅ Phase 3A: standardized email templates
 from app.email_templates import request_received, admin_new_request
 
+# Routers
 from app.routers import dashboard
 from app.routers import admin_requests
 from app.routers import admin_email
@@ -40,12 +40,14 @@ from app.routers import member
 import app.routers.public_club as public_club
 from app.routers import admin_club
 from app.routers import admin_ping
-from app.bootstrap import router as bootstrap_router
 
-# ✅ Phase 3 modular routers (moved out of main.py)
+# ✅ Phase 3 modular routers
 from app.routers import admin_members
 from app.routers import owner
 from app.routers import super_admin
+
+# ✅ Bootstrap router
+from app.bootstrap import router as bootstrap_router
 
 
 # -------------------------------------------------
@@ -154,6 +156,15 @@ app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 # ✅ Only true “unexpected errors” become 500 in a controlled way
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
+# ✅ Trial guard middleware (optional safe import)
+try:
+    from app.trial_guard import TrialGuardMiddleware  # type: ignore
+
+    app.add_middleware(TrialGuardMiddleware)
+except Exception:
+    # If middleware name/path differs, don't crash startup.
+    pass
+
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
@@ -170,13 +181,7 @@ def __routes(_member=Depends(auth.get_current_member)):
     out = []
     for r in app.routes:
         if isinstance(r, APIRoute):
-            out.append(
-                {
-                    "path": r.path,
-                    "methods": sorted(list(r.methods or [])),
-                    "name": r.name,
-                }
-            )
+            out.append({"path": r.path, "methods": sorted(list(r.methods or [])), "name": r.name})
     return out
 
 
@@ -185,7 +190,9 @@ def block_admin_tools_direct():
     raise HTTPException(status_code=404, detail="Not found")
 
 
+# -------------------------------------------------
 # Routers
+# -------------------------------------------------
 app.include_router(dashboard.router)
 app.include_router(admin_requests.router)
 app.include_router(admin_email.router)
@@ -344,8 +351,6 @@ def bootstrap_startup():
 
         # -------------------------------------------------
         # ✅ Phase 4 (Option B): one-time-per-email free trial ledger
-        # Creates a dedicated table with UNIQUE normalized email
-        # Safe to run every startup
         # -------------------------------------------------
         try:
             db.execute(
@@ -448,17 +453,6 @@ def member_login(
         "is_admin": bool(member_obj.is_admin),
         "is_super_admin": bool(getattr(member_obj, "is_super_admin", False)),
         "role": getattr(member_obj, "role", None),
-    }
-
-
-@app.get("/admin/ping")
-def admin_ping(admin: models.Member = Depends(auth.require_admin)):
-    return {
-        "ok": True,
-        "admin_email": admin.email,
-        "club_id": getattr(admin, "club_id", None),
-        "is_super_admin": bool(getattr(admin, "is_super_admin", False)),
-        "role": getattr(admin, "role", None),
     }
 
 

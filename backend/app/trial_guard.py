@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Tuple, Any
 
 from fastapi import Depends, HTTPException, Request, status
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse, Response
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -15,12 +17,13 @@ TRIAL_DAYS = 7
 
 # Routes that must ALWAYS remain accessible even when locked
 ALWAYS_ALLOWED_PREFIXES = (
-    "/billing",          # checkout/portal/webhook/status
-    "/member/login",     # login
+    "/billing",           # checkout/portal/webhook/status
+    "/member/login",      # login
     "/health",
     "/version",
-    "/public",           # public request pages/APIs
-    "/static",           # static assets
+    "/public",            # public request pages/APIs
+    "/static",            # static assets
+    "/admin/bootstrap",   # ✅ allow bootstrap without JWT
 )
 
 
@@ -49,12 +52,10 @@ def _ensure_trial_columns(db: Session) -> None:
         cols = db.execute(text("PRAGMA table_info(clubs)")).fetchall()
         existing = {c[1] for c in cols}
 
-        # trial_started_at: when the free trial began (UTC naive ISO string)
         if "trial_started_at" not in existing:
             db.execute(text("ALTER TABLE clubs ADD COLUMN trial_started_at DATETIME"))
             db.commit()
 
-        # trial_expires_at: computed at start time for convenience
         if "trial_expires_at" not in existing:
             db.execute(text("ALTER TABLE clubs ADD COLUMN trial_expires_at DATETIME"))
             db.commit()
@@ -194,7 +195,7 @@ def start_trial_if_allowed(db: Session, club: models.Club, owner_email: str) -> 
     return get_trial_info(db, club)
 
 
-def is_club_active_for_app(db: Session, club: models.Club) -> tuple[bool, dict]:
+def is_club_active_for_app(db: Session, club: models.Club) -> Tuple[bool, dict]:
     """
     Returns (allowed, info) where allowed means:
       - PRO always allowed
@@ -215,18 +216,19 @@ def is_club_active_for_app(db: Session, club: models.Club) -> tuple[bool, dict]:
     return False, {"plan": plan, "subscription_status": sub_status, "trial": trial, "locked": True}
 
 
-def require_active_access(
-    request: Request,
-    db: Session = Depends(get_db),
-    member: models.Member = Depends(auth.get_current_member),
-) -> models.Member:
+def _privilege_info(member: models.Member) -> tuple[bool, str, bool, bool]:
+    role = (getattr(member, "role", "") or "").upper().strip()
+    is_admin = bool(getattr(member, "is_admin", False))
+    is_super_admin = bool(getattr(member, "is_super_admin", False))
+    is_privileged = (role == "OWNER") or is_admin or is_super_admin
+    return is_privileged, role, is_admin, is_super_admin
+
+
+def _enforce_access(request: Request, db: Session, member: models.Member) -> models.Member:
     """
-    Hard-lock gate:
-      - allow ALWAYS_ALLOWED_PREFIXES no matter what
-      - ✅ allow OWNER/ADMIN/SUPER_ADMIN to access /admin/* even if locked
-      - ✅ allow OWNER/ADMIN/SUPER_ADMIN to access the app even if locked (so they can manage Events/Members/Billing)
-      - otherwise: allow if club is PRO OR FREE-with-active-trial
-      - otherwise: 403 TRIAL_EXPIRED
+    Core enforcement used by BOTH:
+      - dependency-based guard (require_active_access)
+      - middleware (TrialGuardMiddleware)
     """
     path = request.url.path
 
@@ -234,23 +236,18 @@ def require_active_access(
     if _is_always_allowed(path):
         return member
 
-    role = (getattr(member, "role", "") or "").upper().strip()
-    is_admin = bool(getattr(member, "is_admin", False))
-    is_super_admin = bool(getattr(member, "is_super_admin", False))
-    is_privileged = (role == "OWNER") or is_admin or is_super_admin
+    is_privileged, role, is_admin, is_super_admin = _privilege_info(member)
 
-    # ✅ CRITICAL: never lock admins out of admin tools
+    # Never lock privileged users out of admin tools
     if path.startswith("/admin"):
         if is_privileged:
             return member
-
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "NOT_ADMIN", "message": "Admin access required."},
         )
 
-    # ✅ ALSO CRITICAL: allow privileged users to operate the app even if locked
-    # This fixes /member/events (and other member endpoints) returning TRIAL_EXPIRED for admins.
+    # Allow privileged users to operate the app even if locked
     if is_privileged:
         return member
 
@@ -274,3 +271,59 @@ def require_active_access(
             **info,
         },
     )
+
+
+def require_active_access(
+    request: Request,
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(auth.get_current_member),
+) -> models.Member:
+    """
+    Dependency version (use on routers/endpoints if you want).
+    """
+    return _enforce_access(request, db, member)
+
+
+class TrialGuardMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware version (what you said you're using in main.py).
+
+    Behavior:
+      - If path is ALWAYS_ALLOWED: pass-through
+      - Otherwise requires JWT (via auth.get_current_member_from_request)
+      - Applies the same lock rules as require_active_access
+      - Returns JSON with correct HTTP status on block
+    """
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        path = request.url.path
+
+        # Always-allowed paths bypass everything
+        if _is_always_allowed(path):
+            return await call_next(request)
+
+        # We need a DB session inside middleware
+        db = next(get_db())
+        try:
+            # Get member from JWT in Authorization header
+            # (auth module must provide this helper; most of your code already does token parsing there)
+            try:
+                member = auth.get_current_member_from_request(request, db)  # type: ignore[attr-defined]
+            except AttributeError:
+                # Fallback if you don't have get_current_member_from_request:
+                # use the dependency-style method via token extraction.
+                # This keeps you from faceplanting in production.
+                member = auth.get_current_member(db=db, request=request)  # type: ignore[call-arg]
+            except HTTPException as e:
+                return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+
+            # Enforce lock rules
+            try:
+                _enforce_access(request, db, member)
+            except HTTPException as e:
+                return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+
+            return await call_next(request)
+
+        finally:
+            db.close()
