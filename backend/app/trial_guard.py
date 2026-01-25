@@ -1,8 +1,8 @@
-# app/trial_guard.py
+# backend/app/trial_guard.py
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Optional, Tuple, Any
+from typing import Optional, Tuple
 
 from fastapi import Depends, HTTPException, Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -23,7 +23,7 @@ ALWAYS_ALLOWED_PREFIXES = (
     "/version",
     "/public",            # public request pages/APIs
     "/static",            # static assets
-    "/admin/bootstrap",   # ✅ allow bootstrap without JWT
+    "/admin/bootstrap",   # allow bootstrap without JWT
 )
 
 
@@ -191,7 +191,6 @@ def start_trial_if_allowed(db: Session, club: models.Club, owner_email: str) -> 
         raise
 
     claim_trial_for_email(db, owner_email_n)
-
     return get_trial_info(db, club)
 
 
@@ -236,7 +235,7 @@ def _enforce_access(request: Request, db: Session, member: models.Member) -> mod
     if _is_always_allowed(path):
         return member
 
-    is_privileged, role, is_admin, is_super_admin = _privilege_info(member)
+    is_privileged, _, _, _ = _privilege_info(member)
 
     # Never lock privileged users out of admin tools
     if path.startswith("/admin"):
@@ -286,7 +285,7 @@ def require_active_access(
 
 class TrialGuardMiddleware(BaseHTTPMiddleware):
     """
-    Middleware version (what you said you're using in main.py).
+    Middleware version.
 
     Behavior:
       - If path is ALWAYS_ALLOWED: pass-through
@@ -305,15 +304,21 @@ class TrialGuardMiddleware(BaseHTTPMiddleware):
         # We need a DB session inside middleware
         db = next(get_db())
         try:
-            # Get member from JWT in Authorization header
-            # (auth module must provide this helper; most of your code already does token parsing there)
+            # IMPORTANT:
+            # Use a request-aware auth helper designed for middleware.
+            # Do NOT call dependency-style get_current_member() with request=...
             try:
                 member = auth.get_current_member_from_request(request, db)  # type: ignore[attr-defined]
             except AttributeError:
-                # Fallback if you don't have get_current_member_from_request:
-                # use the dependency-style method via token extraction.
-                # This keeps you from faceplanting in production.
-                member = auth.get_current_member(db=db, request=request)  # type: ignore[call-arg]
+                return JSONResponse(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    content={
+                        "detail": {
+                            "code": "AUTH_HELPER_MISSING",
+                            "message": "auth.get_current_member_from_request(request, db) is missing. Add it to app/auth.py.",
+                        }
+                    },
+                )
             except HTTPException as e:
                 return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
 
