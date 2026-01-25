@@ -1,6 +1,4 @@
-from __future__ import annotations
 # backend/app/bootstrap.py
-print("🔥 BOOTSTRAP ROUTER LOADED")
 from __future__ import annotations
 
 import os
@@ -52,10 +50,8 @@ def bootstrap_first_owner(
       - If BOOTSTRAP_KEY missing => 404 (acts like endpoint doesn't exist)
       - Requires BOOTSTRAP_KEY match
       - After first success => 403 forever
-      - After success: remove BOOTSTRAP_* env vars in Render and redeploy
     """
 
-    # If env is removed, do not expose anything.
     if not _bootstrap_enabled():
         raise HTTPException(status_code=404, detail="Not Found")
 
@@ -63,7 +59,7 @@ def bootstrap_first_owner(
     if not secrets.compare_digest(key, bootstrap_key):
         raise HTTPException(status_code=401, detail="Invalid bootstrap key")
 
-    # Hard-disable after first run via DB flag
+    # Make sure the system_flags table exists
     db.execute(
         text(
             """
@@ -75,24 +71,26 @@ def bootstrap_first_owner(
             """
         )
     )
+
+    # Lock bootstrap forever after first use
     used = db.execute(text("SELECT value FROM system_flags WHERE key='bootstrap_used'")).first()
     if used and str(used[0]) == "1":
         raise HTTPException(status_code=403, detail="Bootstrap already used")
 
-    # IMPORTANT: use SLUG (matches your URLs: london-ohio)
+    # Read required env vars
     club_slug = _require_env("BOOTSTRAP_CLUB_SLUG")
     club_name = _env("BOOTSTRAP_CLUB_NAME") or club_slug
 
     owner_email = _require_env("BOOTSTRAP_EMAIL").strip().lower()
     owner_password = _require_env("BOOTSTRAP_PASSWORD")
 
-    # Password hashing
+    # Hash password
     from passlib.context import CryptContext
 
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
     hashed = pwd_context.hash(owner_password)
 
-    # 1) Ensure club exists (by slug)
+    # 1) Ensure club exists
     club_row = db.execute(
         text("SELECT id FROM clubs WHERE slug = :slug"),
         {"slug": club_slug},
@@ -102,12 +100,7 @@ def bootstrap_first_owner(
         club_id = int(club_row[0])
     else:
         db.execute(
-            text(
-                """
-                INSERT INTO clubs (slug, name)
-                VALUES (:slug, :name)
-                """
-            ),
+            text("INSERT INTO clubs (slug, name) VALUES (:slug, :name)"),
             {"slug": club_slug, "name": club_name},
         )
         club_id = int(
@@ -117,7 +110,7 @@ def bootstrap_first_owner(
             ).first()[0]
         )
 
-    # 2) Ensure owner member exists (by club_id + email)
+    # 2) Ensure OWNER member exists
     member_row = db.execute(
         text(
             """
@@ -168,7 +161,7 @@ def bootstrap_first_owner(
         )
         created = True
 
-    # 3) Mark bootstrap as used (permanent lock)
+    # 3) Mark bootstrap used (permanent lock)
     db.execute(
         text(
             """
@@ -188,5 +181,5 @@ def bootstrap_first_owner(
         "owner_email": owner_email,
         "owner_id": owner_id,
         "owner_created": created,
-        "next_step": "REMOVE BOOTSTRAP_* env vars in Render, then redeploy.",
+        "next_step": "Remove BOOTSTRAP_* env vars in Render and redeploy after success.",
     }
