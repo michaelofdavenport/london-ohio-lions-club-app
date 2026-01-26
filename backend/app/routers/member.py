@@ -1,6 +1,7 @@
 # app/routers/member.py
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from typing import Optional
 
@@ -18,6 +19,112 @@ from app.email_templates import requester_decision
 from app.trial_guard import require_active_access
 
 
+# -------------------------------------------------
+# ✅ ADMIN ROUTER (NO /member PREFIX)
+#   This is where /admin/bootstrap MUST live
+# -------------------------------------------------
+admin_router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+class BootstrapResult(BaseModel):
+    ok: bool
+    club_id: int
+    club_slug: str
+    owner_member_id: int
+    owner_email: str
+    message: str
+
+
+@admin_router.post("/bootstrap", response_model=BootstrapResult)
+def admin_bootstrap(
+    key: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    """
+    One-time (but re-runnable) bootstrap endpoint.
+    Protected by a shared key (query param).
+    Creates:
+      - a default club
+      - an OWNER member for that club
+    Idempotent: if they already exist, it returns success instead of crashing.
+    """
+
+    expected = os.getenv("BOOTSTRAP_KEY", "")
+    if not expected or key != expected:
+        raise HTTPException(status_code=403, detail="Invalid bootstrap key")
+
+    club_slug = os.getenv("BOOTSTRAP_CLUB_SLUG", "london-ohio").strip() or "london-ohio"
+    club_name = os.getenv("BOOTSTRAP_CLUB_NAME", "London Lions").strip() or "London Lions"
+    owner_email = os.getenv("BOOTSTRAP_OWNER_EMAIL", "michaelofdavenport@gmail.com").strip().lower()
+    owner_password = os.getenv("BOOTSTRAP_OWNER_PASSWORD", "ChangeMe123!").strip()
+
+    if not owner_email or not owner_password:
+        raise HTTPException(status_code=400, detail="Bootstrap owner email/password not configured")
+
+    # 1) Club: create if missing
+    club = db.scalar(select(models.Club).where(models.Club.slug == club_slug))
+    if not club:
+        club = models.Club(
+            slug=club_slug,
+            name=club_name,
+            plan="FREE",
+            subscription_status="inactive",
+            is_active=True,
+            created_at=datetime.utcnow(),
+        )
+        db.add(club)
+        db.commit()
+        db.refresh(club)
+
+    # 2) Owner member: create if missing (email is globally unique in your schema)
+    owner = db.scalar(select(models.Member).where(models.Member.email == owner_email))
+    if not owner:
+        hashed = auth.hash_password(owner_password)
+        owner = models.Member(
+            club_id=club.id,
+            email=owner_email,
+            hashed_password=hashed,
+            role="OWNER",
+            is_active=True,
+            is_admin=True,
+            is_super_admin=False,
+            created_at=datetime.utcnow(),  # ✅ prevents NOT NULL created_at crash even if DB has no default
+        )
+        db.add(owner)
+        db.commit()
+        db.refresh(owner)
+
+    # Ensure owner is attached to the club (in case email existed already)
+    changed = False
+    if owner.club_id != club.id:
+        owner.club_id = club.id
+        changed = True
+    if owner.role != "OWNER":
+        owner.role = "OWNER"
+        changed = True
+    if owner.is_admin is not True:
+        owner.is_admin = True
+        changed = True
+    if owner.is_active is not True:
+        owner.is_active = True
+        changed = True
+    if changed:
+        db.commit()
+        db.refresh(owner)
+
+    return BootstrapResult(
+        ok=True,
+        club_id=club.id,
+        club_slug=club.slug,
+        owner_member_id=owner.id,
+        owner_email=owner.email,
+        message="Bootstrapped (or already existed).",
+    )
+
+
+# -------------------------------------------------
+# ✅ MEMBER ROUTER (PREFIXED /member)
+# -------------------------------------------------
 router = APIRouter(
     prefix="/member",
     tags=["member"],
@@ -174,15 +281,6 @@ def member_review_request(
 
 # =================================================
 # ✅ EVENTS (CONTRACT-FIRST)
-# Endpoints your events.js calls:
-#   GET    /member/events?include_past=true
-#   POST   /member/events
-#   PUT    /member/events/{event_id}
-#   DELETE /member/events/{event_id}
-#
-# IMPORTANT:
-# - LIST is NOT paywalled (so you can still see events when locked)
-# - CREATE/UPDATE/DELETE are paywalled + admin-only
 # =================================================
 
 class EventUpsertIn(BaseModel):
@@ -198,7 +296,6 @@ def _parse_iso_naive_dt(s: Optional[str]) -> Optional[datetime]:
     if not s:
         return None
     try:
-        # accepts "2026-01-15T11:10:00"
         return datetime.fromisoformat(str(s).strip())
     except Exception:
         return None
@@ -228,7 +325,7 @@ def member_list_events(
 def member_create_event(
     payload: EventUpsertIn,
     db: Session = Depends(get_db),
-    admin: models.Member = Depends(auth.require_admin),  # ✅ admin-only
+    admin: models.Member = Depends(auth.require_admin),
 ):
     start_dt = _parse_iso_naive_dt(payload.start_at)
     end_dt = _parse_iso_naive_dt(payload.end_at)
@@ -264,7 +361,7 @@ def member_update_event(
     event_id: int,
     payload: EventUpsertIn,
     db: Session = Depends(get_db),
-    admin: models.Member = Depends(auth.require_admin),  # ✅ admin-only
+    admin: models.Member = Depends(auth.require_admin),
 ):
     ev = db.get(models.Event, event_id)
     if not ev or ev.club_id != admin.club_id:
@@ -298,7 +395,7 @@ def member_update_event(
 def member_delete_event(
     event_id: int,
     db: Session = Depends(get_db),
-    admin: models.Member = Depends(auth.require_admin),  # ✅ admin-only
+    admin: models.Member = Depends(auth.require_admin),
 ):
     ev = db.get(models.Event, event_id)
     if not ev or ev.club_id != admin.club_id:

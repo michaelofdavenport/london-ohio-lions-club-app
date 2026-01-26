@@ -12,6 +12,7 @@ from sqlalchemy import (
     Float,
     Date,
     Text,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -39,7 +40,14 @@ class Club(Base):
     current_period_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # ✅ Make timestamp resilient for ORM + raw SQL inserts (SQLite-friendly)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
 
     members = relationship("Member", back_populates="club")
     requests = relationship("Request", back_populates="club")
@@ -80,7 +88,13 @@ class Member(Base):
     # Normal club admins remain is_admin=True but NOT is_super_admin.
     is_super_admin: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # ✅ Make timestamp resilient for ORM + raw SQL inserts (SQLite-friendly)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
 
     club = relationship("Club", back_populates="members")
 
@@ -115,7 +129,12 @@ class Request(Base):
 
     description: Mapped[str] = mapped_column(Text, nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
 
     # Review fields
     reviewed_by_member_id: Mapped[int | None] = mapped_column(ForeignKey("members.id"), nullable=True)
@@ -126,7 +145,13 @@ class Request(Base):
     assigned_to_member_id: Mapped[int | None] = mapped_column(ForeignKey("members.id"), nullable=True)
     assigned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
 
     club = relationship("Club", back_populates="requests")
 
@@ -153,7 +178,13 @@ class RequestNote(Base):
     author_id: Mapped[int] = mapped_column(ForeignKey("members.id"), nullable=False)
 
     note: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
 
     request = relationship("Request", back_populates="notes")
     author = relationship("Member")
@@ -168,7 +199,13 @@ class RequestLog(Base):
 
     action: Mapped[str] = mapped_column(String(50), nullable=False)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
 
     request = relationship("Request", back_populates="logs")
     actor = relationship("Member")
@@ -192,7 +229,13 @@ class Event(Base):
     is_public: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_by_member_id: Mapped[int | None] = mapped_column(ForeignKey("members.id"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
 
     club = relationship("Club", back_populates="events")
 
@@ -211,7 +254,12 @@ class ServiceHour(Base):
     activity: Mapped[str] = mapped_column(String(255), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
 
     member = relationship("Member")
     club = relationship("Club", back_populates="service_hours")
