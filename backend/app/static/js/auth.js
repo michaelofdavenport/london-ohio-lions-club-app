@@ -1,15 +1,15 @@
 // app/static/js/auth.js
 // Shared auth helpers for ALL pages.
 //
-// This version is backwards-compatible:
-// - reads token from access_token OR token (and a couple legacy keys)
-// - always attaches Authorization: Bearer <token> in apiFetch()
+// Backwards-compatible:
+// - reads token from access_token OR token (and legacy keys)
+// - apiFetch() attaches Authorization: Bearer <token>
 // - clears tokens on 401
 
 const PRIMARY_KEY = "access_token";
 const FALLBACK_KEYS = ["token", "jwt", "auth_token"];
 
-function getToken() {
+export function getToken() {
   // Primary key first
   let t = localStorage.getItem(PRIMARY_KEY) || sessionStorage.getItem(PRIMARY_KEY);
   if (t) return t;
@@ -42,7 +42,6 @@ export function clearToken() {
     sessionStorage.removeItem(k);
   }
 
-  // also remove plain "token" (some code uses it directly)
   localStorage.removeItem("token");
   sessionStorage.removeItem("token");
 }
@@ -62,9 +61,16 @@ export async function apiFetch(url, options = {}) {
   const headers = new Headers(options.headers || {});
   headers.set("Accept", "application/json");
 
-  // Set JSON content-type automatically when sending a body (unless already set)
+  // Only auto-set JSON when it looks like JSON.
+  // Leave FormData alone (browser sets multipart boundary).
   if (options.body && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
+    if (options.body instanceof URLSearchParams) {
+      headers.set("Content-Type", "application/x-www-form-urlencoded");
+    } else if (options.body instanceof FormData) {
+      // don't set Content-Type
+    } else {
+      headers.set("Content-Type", "application/json");
+    }
   }
 
   if (token) {
@@ -73,7 +79,6 @@ export async function apiFetch(url, options = {}) {
 
   const resp = await fetch(url, { ...options, headers });
 
-  // If token is invalid/expired, clear it so UI can redirect cleanly
   if (resp.status === 401) {
     clearToken();
   }

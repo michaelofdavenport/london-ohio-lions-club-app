@@ -21,7 +21,6 @@ from app.trial_guard import require_active_access
 
 # -------------------------------------------------
 # ✅ ADMIN ROUTER (NO /member PREFIX)
-#   This is where /admin/bootstrap MUST live
 # -------------------------------------------------
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -32,12 +31,15 @@ class BootstrapResult(BaseModel):
     club_slug: str
     owner_member_id: int
     owner_email: str
+    owner_created: bool
+    password_reset: bool
     message: str
 
 
 @admin_router.post("/bootstrap", response_model=BootstrapResult)
 def admin_bootstrap(
     key: str = Query(...),
+    reset_password: bool = Query(False),
     db: Session = Depends(get_db),
 ):
     """
@@ -47,8 +49,10 @@ def admin_bootstrap(
       - a default club
       - an OWNER member for that club
     Idempotent: if they already exist, it returns success instead of crashing.
-    """
 
+    If reset_password=true:
+      - force resets the OWNER password to BOOTSTRAP_OWNER_PASSWORD (even if owner already existed)
+    """
     expected = os.getenv("BOOTSTRAP_KEY", "")
     if not expected or key != expected:
         raise HTTPException(status_code=403, detail="Invalid bootstrap key")
@@ -76,25 +80,26 @@ def admin_bootstrap(
         db.commit()
         db.refresh(club)
 
-    # 2) Owner member: create if missing (email is globally unique in your schema)
+    # 2) Owner member: create if missing
+    owner_created = False
     owner = db.scalar(select(models.Member).where(models.Member.email == owner_email))
     if not owner:
-        hashed = auth.hash_password(owner_password)
         owner = models.Member(
             club_id=club.id,
             email=owner_email,
-            hashed_password=hashed,
+            hashed_password=auth.hash_password(owner_password),
             role="OWNER",
             is_active=True,
             is_admin=True,
             is_super_admin=False,
-            created_at=datetime.utcnow(),  # ✅ prevents NOT NULL created_at crash even if DB has no default
+            created_at=datetime.utcnow(),
         )
         db.add(owner)
         db.commit()
         db.refresh(owner)
+        owner_created = True
 
-    # Ensure owner is attached to the club (in case email existed already)
+    # 3) Ensure owner is attached to the club and has proper flags
     changed = False
     if owner.club_id != club.id:
         owner.club_id = club.id
@@ -108,9 +113,21 @@ def admin_bootstrap(
     if owner.is_active is not True:
         owner.is_active = True
         changed = True
+
+    # 4) Optional: force-reset password
+    password_reset = False
+    if reset_password:
+        owner.hashed_password = auth.hash_password(owner_password)
+        password_reset = True
+        changed = True
+
     if changed:
         db.commit()
         db.refresh(owner)
+
+    msg = "Bootstrapped (or already existed)."
+    if password_reset:
+        msg = "Bootstrapped. Owner password reset from BOOTSTRAP_OWNER_PASSWORD."
 
     return BootstrapResult(
         ok=True,
@@ -118,12 +135,41 @@ def admin_bootstrap(
         club_slug=club.slug,
         owner_member_id=owner.id,
         owner_email=owner.email,
-        message="Bootstrapped (or already existed).",
+        owner_created=owner_created,
+        password_reset=password_reset,
+        message=msg,
     )
 
 
 # -------------------------------------------------
-# ✅ MEMBER ROUTER (PREFIXED /member)
+# ✅ ONE-TIME OWNER PASSWORD RESET (ADMIN, KEYED)
+# -------------------------------------------------
+@admin_router.post("/reset-owner-password")
+def admin_reset_owner_password(
+    key: str = Query(...),
+    new_password: str = Query(..., min_length=6),
+    db: Session = Depends(get_db),
+):
+    expected = os.getenv("BOOTSTRAP_KEY", "")
+    if not expected or key != expected:
+        raise HTTPException(status_code=403, detail="Invalid bootstrap key")
+
+    owner_email = os.getenv("BOOTSTRAP_OWNER_EMAIL", "michaelofdavenport@gmail.com").strip().lower()
+    owner = db.scalar(select(models.Member).where(models.Member.email == owner_email))
+    if not owner:
+        raise HTTPException(status_code=404, detail="Owner not found")
+
+    owner.hashed_password = auth.hash_password(new_password)
+    owner.is_active = True
+    owner.is_admin = True
+    owner.role = "OWNER"
+    db.commit()
+
+    return {"ok": True, "owner_email": owner.email, "message": "Owner password reset."}
+
+
+# -------------------------------------------------
+# ✅ MEMBER ROUTER (PREFIXED /member) (AUTH REQUIRED)
 # -------------------------------------------------
 router = APIRouter(
     prefix="/member",
@@ -134,10 +180,10 @@ router = APIRouter(
     ],
 )
 
-# -------------------------------------------------
-# BOOTSTRAP ENDPOINTS (AUTH-ONLY, NEVER LOCKED)
-# -------------------------------------------------
 
+# -------------------------------------------------
+# "BOOTSTRAP" / SAFE ENDPOINTS (AUTH-ONLY, NEVER LOCKED)
+# -------------------------------------------------
 @router.get("/me", response_model=schemas.MemberOut)
 def member_me(member: models.Member = Depends(auth.get_current_member)):
     return member
@@ -186,7 +232,6 @@ def member_requests_summary(
 # -------------------------------------------------
 # MEMBER PROFILE (locked because it’s “app usage”)
 # -------------------------------------------------
-
 @router.put("/me", response_model=schemas.MemberOut, dependencies=[Depends(require_active_access)])
 def member_update_me(
     payload: schemas.MemberUpdateMe,
@@ -207,7 +252,6 @@ def member_update_me(
 # -------------------------------------------------
 # APP USAGE ENDPOINTS (LOCKED)
 # -------------------------------------------------
-
 @router.get("/roster", response_model=list[schemas.MemberOut], dependencies=[Depends(require_active_access)])
 def member_roster(
     db: Session = Depends(get_db),
@@ -282,7 +326,6 @@ def member_review_request(
 # =================================================
 # ✅ EVENTS (CONTRACT-FIRST)
 # =================================================
-
 class EventUpsertIn(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     location: str = Field(..., min_length=1, max_length=200)
@@ -409,7 +452,6 @@ def member_delete_event(
 # -------------------------------------------------
 # SERVICE HOURS (LOCKED)
 # -------------------------------------------------
-
 @router.post(
     "/service-hours",
     response_model=schemas.ServiceHourOut,

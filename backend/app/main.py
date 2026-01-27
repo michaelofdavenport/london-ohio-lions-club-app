@@ -8,7 +8,6 @@ import os
 from dotenv import load_dotenv, find_dotenv
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
-from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select, text
@@ -205,10 +204,20 @@ app.include_router(setup.router)
 app.include_router(demo.router)
 app.include_router(public_club.router)
 app.include_router(admin_club.router)
+
+# ✅ MEMBER ROUTERS (IMPORTANT ORDER)
+# 1) Public member routes first (login must NOT require auth)
+#    (This must exist in app/routers/member.py as: public_member_router = APIRouter(...)
+app.include_router(member.public_member_router)
+
+# 2) Authenticated member routes
 app.include_router(member.router)
+
+# 3) Keyed admin bootstrap routes (from member.py)
+app.include_router(member.admin_router)
+
 app.include_router(admin_ping.router)
 app.include_router(bootstrap_router)
-app.include_router(member.admin_router)
 
 # ✅ Phase 3 modular routers
 app.include_router(admin_members.router)
@@ -414,47 +423,6 @@ def bootstrap_startup():
 
     finally:
         db.close()
-
-
-# -------------------------------------------------
-# AUTH / LOGIN
-# -------------------------------------------------
-@app.post("/member/login", response_model=schemas.TokenOut)
-def member_login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db),
-):
-    email = (form_data.username or "").strip().lower()
-    password = form_data.password or ""
-
-    member_obj = db.scalar(select(models.Member).where(models.Member.email == email))
-    if not member_obj or not auth.verify_password(password, member_obj.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-
-    if not member_obj.is_active:
-        raise HTTPException(status_code=403, detail="Member is inactive")
-
-    if not member_obj.club_id:
-        raise HTTPException(status_code=500, detail="Member missing club_id")
-
-    token = auth.create_access_token(
-        subject=member_obj.email,
-        member_id=member_obj.id,
-        club_id=member_obj.club_id,
-        is_admin=bool(member_obj.is_admin),
-        is_super_admin=bool(getattr(member_obj, "is_super_admin", False)),
-        role=getattr(member_obj, "role", None),
-    )
-
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "club_id": int(member_obj.club_id),
-        "member_id": int(member_obj.id),
-        "is_admin": bool(member_obj.is_admin),
-        "is_super_admin": bool(getattr(member_obj, "is_super_admin", False)),
-        "role": getattr(member_obj, "role", None),
-    }
 
 
 # -------------------------------------------------

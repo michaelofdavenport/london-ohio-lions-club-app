@@ -78,11 +78,11 @@ async function loadClubFromUrlOrStorage() {
   }
 }
 
-async function login(email, password, clubSlug) {
+async function login(email, password) {
+  // OAuth2PasswordRequestForm expects x-www-form-urlencoded with username/password
   const payload = new URLSearchParams();
   payload.append("username", email);
   payload.append("password", password);
-  payload.append("club_slug", clubSlug);
 
   const res = await fetch("/member/login", {
     method: "POST",
@@ -98,7 +98,15 @@ async function login(email, password, clubSlug) {
 function saveTokenFromLoginResponse(data) {
   const token = data?.access_token || data?.token || data?.jwt;
   if (!token) return null;
-  localStorage.setItem("token", token); // ✅ shared auth.js will accept this key
+
+  // ✅ Store in the primary key used everywhere
+  localStorage.setItem("access_token", token);
+  sessionStorage.setItem("access_token", token);
+
+  // ✅ Keep legacy key so older pages still work
+  localStorage.setItem("token", token);
+  sessionStorage.setItem("token", token);
+
   return token;
 }
 
@@ -117,7 +125,13 @@ $("loginForm")?.addEventListener("submit", async (e) => {
   if (!email || !password) return setMessage("Enter email and password.");
 
   try {
-    const data = await login(email, password, clubSlug);
+    // Optional: clear old tokens before logging in
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("token");
+    sessionStorage.removeItem("access_token");
+    sessionStorage.removeItem("token");
+
+    const data = await login(email, password);
     const token = saveTokenFromLoginResponse(data);
     if (!token) throw new Error("Login succeeded but no token returned.");
     setMessage("Signed in!", false);
