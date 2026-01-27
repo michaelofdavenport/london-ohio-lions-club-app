@@ -16,14 +16,24 @@ from app.database import get_db
 TRIAL_DAYS = 7
 
 # Routes that must ALWAYS remain accessible even when locked
+# IMPORTANT:
+# - Include "/" so your landing redirect works
+# - Include "/docs" and "/openapi.json" if you want API docs visible without a token
 ALWAYS_ALLOWED_PREFIXES = (
-    "/billing",           # checkout/portal/webhook/status
-    "/member/login",      # login
+    "/",                 # ✅ allow root so RedirectResponse can run
+    "/docs",             # ✅ Swagger UI (optional, but you were testing it)
+    "/openapi.json",     # ✅ OpenAPI schema (Swagger needs this)
+    "/redoc",            # ✅ optional (nice to have)
+
+    "/billing",          # checkout/portal/webhook/status
+    "/member/login",     # login
     "/health",
     "/version",
-    "/public",            # public request pages/APIs
-    "/static",            # static assets
-    "/admin/bootstrap",   # allow bootstrap without JWT
+    "/public",           # public request pages/APIs
+    "/static",           # static assets
+
+    "/admin/bootstrap",  # allow bootstrap without JWT
+    "/admin/reset-owner-password",  # ✅ you have this route too
 )
 
 
@@ -81,6 +91,7 @@ def _ensure_trial_claim_table(db: Session) -> None:
         )
         db.commit()
     except Exception:
+        orr = None
         db.rollback()
 
 
@@ -224,11 +235,6 @@ def _privilege_info(member: models.Member) -> tuple[bool, str, bool, bool]:
 
 
 def _enforce_access(request: Request, db: Session, member: models.Member) -> models.Member:
-    """
-    Core enforcement used by BOTH:
-      - dependency-based guard (require_active_access)
-      - middleware (TrialGuardMiddleware)
-    """
     path = request.url.path
 
     # Always allow these paths even if locked
@@ -250,7 +256,6 @@ def _enforce_access(request: Request, db: Session, member: models.Member) -> mod
     if is_privileged:
         return member
 
-    # Normal lock rules for everyone else
     club = db.get(models.Club, member.club_id)
     if not club:
         raise HTTPException(
@@ -277,23 +282,10 @@ def require_active_access(
     db: Session = Depends(get_db),
     member: models.Member = Depends(auth.get_current_member),
 ) -> models.Member:
-    """
-    Dependency version (use on routers/endpoints if you want).
-    """
     return _enforce_access(request, db, member)
 
 
 class TrialGuardMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware version.
-
-    Behavior:
-      - If path is ALWAYS_ALLOWED: pass-through
-      - Otherwise requires JWT (via auth.get_current_member_from_request)
-      - Applies the same lock rules as require_active_access
-      - Returns JSON with correct HTTP status on block
-    """
-
     async def dispatch(self, request: Request, call_next) -> Response:
         path = request.url.path
 
@@ -301,12 +293,8 @@ class TrialGuardMiddleware(BaseHTTPMiddleware):
         if _is_always_allowed(path):
             return await call_next(request)
 
-        # We need a DB session inside middleware
         db = next(get_db())
         try:
-            # IMPORTANT:
-            # Use a request-aware auth helper designed for middleware.
-            # Do NOT call dependency-style get_current_member() with request=...
             try:
                 member = auth.get_current_member_from_request(request, db)  # type: ignore[attr-defined]
             except AttributeError:
@@ -322,7 +310,6 @@ class TrialGuardMiddleware(BaseHTTPMiddleware):
             except HTTPException as e:
                 return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
 
-            # Enforce lock rules
             try:
                 _enforce_access(request, db, member)
             except HTTPException as e:
